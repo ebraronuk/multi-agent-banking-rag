@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: banking-agent-api
+  labels:
+    app: banking-agent-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: banking-agent-api
+  template:
+    metadata:
+      labels:
+        app: banking-agent-api
+    spec:
+      containers:
+        - name: api
+          image: multi-agent-banking-rag:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: banking-agent-config
+            - secretRef:
+                name: banking-agent-secrets
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1"
+              memory: "512Mi"
+          volumeMounts:
+            - name: vectorstore
+              mountPath: /data/vectorstore
+      volumes:
+        - name: vectorstore
+          persistentVolumeClaim:
+            claimName: banking-agent-vectorstore
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: banking-agent-vectorstore
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 2Gi

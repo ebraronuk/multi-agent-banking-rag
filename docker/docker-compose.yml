@@ -1,0 +1,39 @@
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - ../.env
+    environment:
+      - CHROMA_PERSIST_DIR=/data/vectorstore
+      - MCP_SERVER_HOST=mcp
+    volumes:
+      - vectorstore:/data/vectorstore
+    depends_on:
+      - mcp
+    restart: unless-stopped
+
+  mcp:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    command: ["python", "-m", "mcp_server.server"]
+    ports:
+      - "8765:8765"
+    env_file:
+      - ../.env
+    environment:
+      # MCP_SERVER_HOST is overloaded: the api service uses it as the hostname
+      # to *connect to* (mcp, via Docker DNS); this process uses the same
+      # setting to decide what to *bind* to. 127.0.0.1 (the .env default,
+      # meant for local-without-Docker dev) would only accept connections from
+      # inside this container's own network namespace — 0.0.0.0 is required
+      # for the api container to reach it at all.
+      - MCP_SERVER_HOST=0.0.0.0
+    restart: unless-stopped
+
+volumes:
+  vectorstore:
