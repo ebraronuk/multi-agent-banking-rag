@@ -35,7 +35,11 @@ _ACCOUNTS: dict[str, dict[str, object]] = {
         "currency": "TRY",
         "owner_name": "Ayşe Yılmaz (demo)",
         "transactions": [
-            {"date": "2026-08-03T14:22:00Z", "description": "Migros - market alışverişi", "amount": -245.50},
+            {
+                "date": "2026-08-03T14:22:00Z",
+                "description": "Migros - market alışverişi",
+                "amount": -245.50,
+            },
             {"date": "2026-08-01T09:05:00Z", "description": "Maaş yatışı", "amount": 18500.00},
             {"date": "2026-07-29T19:47:00Z", "description": "Elektrik faturası", "amount": -412.30},
             {"date": "2026-07-27T11:10:00Z", "description": "ATM para çekme", "amount": -1000.00},
@@ -51,7 +55,11 @@ _ACCOUNTS: dict[str, dict[str, object]] = {
         "transactions": [
             {"date": "2026-08-02T18:30:00Z", "description": "Netflix aboneliği", "amount": -129.99},
             {"date": "2026-07-30T08:00:00Z", "description": "Kira ödemesi", "amount": -9500.00},
-            {"date": "2026-07-25T13:15:00Z", "description": "Serbest çalışma ödemesi", "amount": 6200.00},
+            {
+                "date": "2026-07-25T13:15:00Z",
+                "description": "Serbest çalışma ödemesi",
+                "amount": 6200.00,
+            },
         ],
         "cards": [
             {"last4": "9087", "status": "active"},
@@ -103,7 +111,9 @@ def list_transactions(account_id: str, limit: int = 10) -> dict[str, object]:
         return {"ok": False, "error": "ACCOUNT_NOT_FOUND"}
 
     transactions = account["transactions"][:limit]  # type: ignore[index]
-    logger.info("tool_lookup_hit", tool="list_transactions", account_id=account_id, count=len(transactions))
+    logger.info(
+        "tool_lookup_hit", tool="list_transactions", account_id=account_id, count=len(transactions)
+    )
     return {
         "ok": True,
         "data": {

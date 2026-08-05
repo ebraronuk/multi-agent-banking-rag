@@ -65,7 +65,9 @@ def build_guardrail_node(settings: Settings) -> Callable[[GraphState], dict[str,
         flags: list[str] = list(state.get("guardrail_flags", []))
         draft = state.get("draft_answer")
         iteration_count = state.get("iteration_count", 0)
-        tool_agent_pending = state.get("intent") is not None and not state.get("tool_agent_done", True)
+        tool_agent_pending = state.get("intent") is not None and not state.get(
+            "tool_agent_done", True
+        )
 
         if iteration_count >= settings.max_agent_iterations and tool_agent_pending:
             final_answer = ITERATION_LIMIT_MESSAGE
@@ -82,7 +84,9 @@ def build_guardrail_node(settings: Settings) -> Callable[[GraphState], dict[str,
                 flags.append("PII_REDACTED")
 
         if flags:
-            logger.info("guardrail_flags_raised", flags=flags, conversation_id=state.get("conversation_id"))
+            logger.info(
+                "guardrail_flags_raised", flags=flags, conversation_id=state.get("conversation_id")
+            )
 
         return {
             "final_answer": final_answer,

@@ -59,7 +59,9 @@ def build_supervisor_router(settings: Settings) -> Callable[[GraphState], str]:
 
         if intent in TOOL_DRIVEN_INTENTS:
             if iteration_count >= settings.max_agent_iterations:
-                logger.warning("agent_iteration_limit_hit", intent=intent, iteration_count=iteration_count)
+                logger.warning(
+                    "agent_iteration_limit_hit", intent=intent, iteration_count=iteration_count
+                )
                 return NODE_GUARDRAIL
             if state.get("tool_agent_done"):
                 return NODE_GUARDRAIL

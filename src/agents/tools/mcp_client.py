@@ -87,7 +87,9 @@ class MCPToolClient:
                 raw_result = await client.call_tool(name, arguments)
         except Exception as exc:  # noqa: BLE001 - degrade the conversation, never 500 the request
             latency_ms = (time.perf_counter() - start) * 1000
-            logger.warning("mcp_tool_call_failed", tool_name=name, arguments=arguments, error=str(exc))
+            logger.warning(
+                "mcp_tool_call_failed", tool_name=name, arguments=arguments, error=str(exc)
+            )
             return ToolCallRecord(
                 tool_name=name,
                 arguments=arguments,

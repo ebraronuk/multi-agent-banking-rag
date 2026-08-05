@@ -1,5 +1,10 @@
 # multi-agent-banking-rag
 
+[![CI](https://github.com/ebraronuk/multi-agent-banking-rag/actions/workflows/ci.yml/badge.svg)](https://github.com/ebraronuk/multi-agent-banking-rag/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+
 Bir retail-banking destek asistanı için **çoklu ajan (multi-agent) mimarisi** referans
 uygulaması: niyet/varlık çıkarımı, hibrit RAG (vektör + BM25), MCP üzerinden araç çağırma
 ve kural tabanlı bir güvenlik katmanı — hepsi [LangGraph](https://github.com/langchain-ai/langgraph)
@@ -49,6 +54,21 @@ Detaylı diyagram, süreç sınırları ve ölçeklenebilirlik notları için �
 | Retrieval | Chroma (vektör) + BM25 rerank | Türkçe finansal terimlerde tam-eşleşme + anlamsal yakınlığı birleştirir ([ADR-004](docs/decisions/ADR-004-hybrid-retrieval.md)) |
 | Araç çağırma | FastMCP (ayrı süreç) + in-process fallback | Gerçek bir MCP sınırı göstermek + testlerde ağ bağımlılığından kaçınmak ([ADR-005](docs/decisions/ADR-005-mcp-tool-boundary.md)) |
 | Güvenlik | Kural tabanlı guardrail, LLM değil | Guardrail'in kendisi jailbreak edilebilir bir modele bağımlı olmamalı ([ADR-006](docs/decisions/ADR-006-guardrail-not-an-llm-call.md)) |
+| Hata taksonomisi | HTTP hataları sadece gerçekten raise edilenlerle sınırlı; ajan-seviyesi aksamalar 200 + flag | Kullanılmayan bir hata kodu, hiç olmamasından beter ([ADR-007](docs/decisions/ADR-007-error-taxonomy-and-resilience.md)) |
+
+## Üretime dönük detaylar (demo kapsamında ama gerçek)
+
+- **Dayanıklılık:** `rag_agent`/`smalltalk_agent`/`tool_agent`'ın LLM çağrıları `app/core/llm.py::safe_ainvoke`
+  ile sarmalı — gerçek bir sağlayıcı kesintisi `/chat`'i 500'e düşürmek yerine
+  guardrail'in mevcut "yanıt üretemedim" yoluna zarifçe düşer (bkz. ADR-007).
+- **Rate limiting:** `/chat` `slowapi` ile IP başına `20/dakika` sınırlı — her
+  LLM çağrısı gerçek para/gecikme maliyeti taşıdığı için, kaçak bir istemci
+  döngüsü bunu sınırsız tüketemez. Aşıldığında `429` + `RATE_LIMITED` döner.
+- **Gözlemlenebilirlik:** Her yanıt bir `X-Request-Id` header'ı taşır (istemci
+  verirse aynen yansıtılır); `GET /metrics` Prometheus formatında istek
+  sayısı/gecikme histogramı sunar (`prometheus-fastapi-instrumentator`).
+- **Doğrulama hataları** FastAPI'nin varsayılan 422 şeması yerine bu API'nin
+  kendi `ErrorResponse` sözleşmesiyle (`code`, `message`, `details`) döner.
 
 ## Hızlı başlangıç
 
@@ -84,6 +104,7 @@ kurulmaz — bu durumda Docker akışını kullanın. 3.11+ varsa:
 ```bash
 python3.11 -m venv .venv && source .venv/bin/activate
 make install
+make hooks  # ruff lint+format'ı her commit'ten önce otomatik çalıştırır
 make seed   # bilgi tabanını doldur
 make dev    # http://localhost:8000, --reload
 make mcp    # ayrı bir terminalde: araç sunucusu

@@ -53,6 +53,14 @@ Bu depoya yeni katılan biri için: nereden başla, neye dikkat et.
 - `data/vectorstore` bir Docker named volume'e mount ediliyor; imaj non-root `appuser`
   olarak çalıştığı için, Dockerfile bu dizini build sırasında oluşturup chown etmezse
   volume root-owned gelir ve Chroma "unable to open database file" ile başlangıçta çöker.
+- `app/core/rate_limit.py::limiter` process-ömürlü, in-memory bir sayaç — `tests/conftest.py`
+  her testten önce `limiter.reset()` çağıran bir autouse fixture içeriyor. Bunu kaldırırsanız
+  rate-limit testinden SONRA çalışan başka testler, aynı sayaç dolu kaldığı için sebepsiz
+  yere 429 almaya başlar (test sırasına bağlı, ilk bakışta "flaky" görünen bir hata).
+- `MCPToolClient`'ın gerçek ağ yolu `tests/unit/test_mcp_client.py`'de artık `fastmcp.Client`'ı
+  mock'layarak test ediliyor (`_FakeClientContext`) — gerçek bir MCP sunucusu ayağa
+  kaldırmadan hem başarı hem bağlantı-hatası yollarını kapsıyor; gerçek ağ üzerinden uçtan
+  uca doğrulama yine de Docker'da manuel yapıldı (bkz. commit geçmişi).
 
 ## Yapılmadı / bilinçli olarak ertelendi
 

@@ -5,7 +5,7 @@ description = "Reference implementation of a multi-agent, tool-using RAG assista
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "Ebrar" }]
+authors = [{ name = "Ebrar Onuk", email = "ebraronuk00@gmail.com" }]
 
 dependencies = [
     "fastapi>=0.115.0",
@@ -26,6 +26,8 @@ dependencies = [
     "python-json-logger>=2.0.7",
     "tenacity>=9.0.0",
     "httpx>=0.27.0",
+    "slowapi>=0.1.9",
+    "prometheus-fastapi-instrumentator>=7.0.0",
 ]
 
 [project.optional-dependencies]
@@ -36,7 +38,12 @@ dev = [
     "ruff>=0.7.4",
     "mypy>=1.13.0",
     "types-requests",
+    "pre-commit>=4.0.0",
 ]
+
+[project.urls]
+Repository = "https://github.com/ebraronuk/multi-agent-banking-rag"
+Documentation = "https://github.com/ebraronuk/multi-agent-banking-rag/blob/main/docs/architecture.md"
 
 [build-system]
 requires = ["setuptools>=68.0"]

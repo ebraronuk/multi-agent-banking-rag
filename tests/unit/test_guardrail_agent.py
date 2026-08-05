@@ -33,7 +33,9 @@ def test_redacts_iban_and_long_digit_runs() -> None:
     result = node(state)
 
     assert "TR33" not in result["final_answer"]
-    assert result["final_answer"].endswith("bakiyesi 1500 TL'dir.") or "***" in result["final_answer"]
+    assert (
+        result["final_answer"].endswith("bakiyesi 1500 TL'dir.") or "***" in result["final_answer"]
+    )
     assert "PII_REDACTED" in result["guardrail_flags"]
 
 

@@ -64,8 +64,7 @@ def test_rerank_prefers_lexically_and_semantically_relevant_document() -> None:
 def test_rerank_respects_top_k() -> None:
     query = "hesap ücreti"
     candidates = [
-        (_doc(f"doc-{i}", f"hesap işletim ücreti bilgisi numara {i}"), 0.1 * i)
-        for i in range(1, 6)
+        (_doc(f"doc-{i}", f"hesap işletim ücreti bilgisi numara {i}"), 0.1 * i) for i in range(1, 6)
     ]
 
     citations = rerank_with_bm25(query, candidates, top_k=2)

@@ -14,19 +14,24 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from agents.prompts.smalltalk_prompt import SMALLTALK_SYSTEM_PROMPT
 from agents.state import GraphState
+from app.core.llm import safe_ainvoke
 from schemas.dto import AgentTraceStep
 
 
-def build_smalltalk_node(llm: BaseChatModel) -> Callable[[GraphState], Awaitable[dict[str, object]]]:
+def build_smalltalk_node(
+    llm: BaseChatModel,
+) -> Callable[[GraphState], Awaitable[dict[str, object]]]:
     async def smalltalk_node(state: GraphState) -> dict[str, object]:
-        response = await llm.ainvoke(
+        draft_answer = await safe_ainvoke(
+            llm,
             [
                 SystemMessage(content=SMALLTALK_SYSTEM_PROMPT),
                 HumanMessage(content=state["user_query"]),
-            ]
+            ],
+            node="smalltalk",
         )
         return {
-            "draft_answer": str(response.content),
+            "draft_answer": draft_answer,
             "trace": [AgentTraceStep(node="smalltalk", summary="generated conversational reply")],
         }
 

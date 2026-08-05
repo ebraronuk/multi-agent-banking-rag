@@ -51,6 +51,9 @@ class Settings(BaseSettings):
 
     max_agent_iterations: int = Field(default=6, ge=1, le=20)
     request_timeout_seconds: int = Field(default=30, ge=1)
+    chat_rate_limit: str = Field(
+        default="20/minute", description="slowapi limit string, e.g. '20/minute'"
+    )
 
     langsmith_tracing: bool = False
     langsmith_api_key: str | None = None

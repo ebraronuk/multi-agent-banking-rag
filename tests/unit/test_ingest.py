@@ -30,7 +30,11 @@ def test_load_sample_documents_produces_non_empty_chunks(tmp_path: Path) -> None
 
 
 def test_load_sample_documents_attaches_expected_metadata_keys(tmp_path: Path) -> None:
-    _write_doc(tmp_path, "hesap-turleri.md", "# Hesap Türleri\n\nVadesiz ve vadeli hesap seçenekleri sunulur.")
+    _write_doc(
+        tmp_path,
+        "hesap-turleri.md",
+        "# Hesap Türleri\n\nVadesiz ve vadeli hesap seçenekleri sunulur.",
+    )
 
     documents = load_sample_documents(str(tmp_path))
 
@@ -57,7 +61,10 @@ def test_load_sample_documents_falls_back_to_filename_when_no_h1(tmp_path: Path)
 
 
 def test_load_sample_documents_chunks_long_file_into_multiple_pieces(tmp_path: Path) -> None:
-    long_body = "Bu cümle tekrar tekrar yazılarak dosyanın 500 karakterlik parça boyutunu aşması sağlanır. " * 20
+    long_body = (
+        "Bu cümle tekrar tekrar yazılarak dosyanın 500 karakterlik parça boyutunu aşması sağlanır. "
+        * 20
+    )
     _write_doc(tmp_path, "long-doc.md", f"# Uzun Belge\n\n{long_body}")
 
     documents = load_sample_documents(str(tmp_path))

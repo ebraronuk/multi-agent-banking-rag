@@ -66,7 +66,8 @@ _ACCOUNT_TYPE_VOCAB = (
     "birikim hesabı",
 )
 _ACCOUNT_TYPE_PATTERNS = tuple(
-    (canonical, re.compile(re.escape(canonical), re.IGNORECASE)) for canonical in _ACCOUNT_TYPE_VOCAB
+    (canonical, re.compile(re.escape(canonical), re.IGNORECASE))
+    for canonical in _ACCOUNT_TYPE_VOCAB
 )
 
 

@@ -25,6 +25,20 @@ class IntentLabel(StrEnum):
     OUT_OF_SCOPE = "OUT_OF_SCOPE"
 
 
+class GuardrailFlag(StrEnum):
+    """Closed vocabulary for `guardrail_agent.py`'s outcomes.
+
+    Modeled as an enum (not ad-hoc strings) for the same reason `IntentLabel`
+    and `EntityType` are: a typo in a bare string flag would silently fail to
+    match anywhere it's checked, and neither mypy nor a test would catch it.
+    """
+
+    PII_REDACTED = "PII_REDACTED"
+    FINANCIAL_ADVICE_BLOCKED = "FINANCIAL_ADVICE_BLOCKED"
+    ESCALATED_ITERATION_LIMIT = "ESCALATED_ITERATION_LIMIT"
+    NO_DRAFT_PRODUCED = "NO_DRAFT_PRODUCED"
+
+
 class EntityType(StrEnum):
     IBAN = "IBAN"
     AMOUNT = "AMOUNT"
@@ -38,7 +52,9 @@ class EntityType(StrEnum):
 class Entity(BaseModel):
     type: EntityType
     value: str = Field(description="Raw substring as it appeared in the user message")
-    normalized: str | None = Field(default=None, description="Canonicalized value, e.g. IBAN without spaces")
+    normalized: str | None = Field(
+        default=None, description="Canonicalized value, e.g. IBAN without spaces"
+    )
     start: int | None = Field(default=None, ge=0)
     end: int | None = Field(default=None, ge=0)
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
@@ -73,7 +89,9 @@ class ChatMessage(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    conversation_id: str | None = Field(default=None, description="Omit to start a new conversation")
+    conversation_id: str | None = Field(
+        default=None, description="Omit to start a new conversation"
+    )
     message: str = Field(min_length=1, max_length=4000)
 
 
@@ -85,7 +103,7 @@ class ChatResponse(BaseModel):
     citations: list[Citation] = Field(default_factory=list)
     tool_calls: list[ToolCallRecord] = Field(default_factory=list)
     trace: list[AgentTraceStep] = Field(default_factory=list)
-    guardrail_flags: list[str] = Field(default_factory=list)
+    guardrail_flags: list[GuardrailFlag] = Field(default_factory=list)
     iterations: int = Field(ge=0)
 
 
@@ -94,11 +112,18 @@ class HealthResponse(BaseModel):
 
 
 class ErrorCode(StrEnum):
+    """HTTP-level failure codes only.
+
+    Agent-level "failures" (iteration limit hit, guardrail blocked a reply,
+    a tool call came back empty) are deliberately NOT in this enum — they are
+    modeled as successful `ChatResponse`s carrying `GuardrailFlag`s, per
+    ADR-006 and the "return a result, don't raise for expected outcomes"
+    principle. An enum member that never gets raised is worse than no member
+    at all: it's a claim about behavior the code doesn't keep.
+    """
+
     VALIDATION_ERROR = "VALIDATION_ERROR"
-    AGENT_ITERATION_LIMIT = "AGENT_ITERATION_LIMIT"
-    TOOL_EXECUTION_FAILED = "TOOL_EXECUTION_FAILED"
-    GUARDRAIL_BLOCKED = "GUARDRAIL_BLOCKED"
-    UPSTREAM_LLM_ERROR = "UPSTREAM_LLM_ERROR"
+    RATE_LIMITED = "RATE_LIMITED"
     INTERNAL_ERROR = "INTERNAL_ERROR"
 
 

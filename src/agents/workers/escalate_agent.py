@@ -22,8 +22,12 @@ _OUT_OF_SCOPE_MESSAGE = (
 
 
 def escalate_node(state: GraphState) -> dict[str, object]:
-    message = _ESCALATE_MESSAGE if state.get("intent") == IntentLabel.ESCALATE else _OUT_OF_SCOPE_MESSAGE
+    message = (
+        _ESCALATE_MESSAGE if state.get("intent") == IntentLabel.ESCALATE else _OUT_OF_SCOPE_MESSAGE
+    )
     return {
         "draft_answer": message,
-        "trace": [AgentTraceStep(node="escalate", summary=f"handed off for intent={state.get('intent')}")],
+        "trace": [
+            AgentTraceStep(node="escalate", summary=f"handed off for intent={state.get('intent')}")
+        ],
     }

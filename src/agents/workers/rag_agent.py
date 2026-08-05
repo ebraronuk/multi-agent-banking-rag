@@ -15,12 +15,16 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from agents.prompts.rag_prompt import RAG_SYSTEM_PROMPT
 from agents.state import GraphState
+from app.core.llm import safe_ainvoke
 from rag.retriever import HybridRetriever
 from schemas.dto import AgentTraceStep, Citation
 
 
 def _build_context_block(citations: list[Citation]) -> str:
-    return "\n".join(f"[{index}] {citation.title}: {citation.snippet}" for index, citation in enumerate(citations, start=1))
+    return "\n".join(
+        f"[{index}] {citation.title}: {citation.snippet}"
+        for index, citation in enumerate(citations, start=1)
+    )
 
 
 def build_rag_node(
@@ -30,18 +34,22 @@ def build_rag_node(
         citations = retriever.retrieve(state["user_query"])
         context = _build_context_block(citations)
 
-        response = await llm.ainvoke(
+        draft_answer = await safe_ainvoke(
+            llm,
             [
                 SystemMessage(content=RAG_SYSTEM_PROMPT),
                 HumanMessage(content=f"Bağlam:\n{context}\n\nSoru: {state['user_query']}"),
-            ]
+            ],
+            node="rag_agent",
         )
 
         return {
             "retrieved_docs": citations,
-            "draft_answer": str(response.content),
+            "draft_answer": draft_answer,
             "trace": [
-                AgentTraceStep(node="rag_agent", summary=f"answered using {len(citations)} citation(s)")
+                AgentTraceStep(
+                    node="rag_agent", summary=f"answered using {len(citations)} citation(s)"
+                )
             ],
         }
 

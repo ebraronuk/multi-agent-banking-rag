@@ -17,6 +17,9 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from pydantic import SecretStr
 
 from app.core.config import LLMProvider, Settings, get_settings
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class FakeChatModel(BaseChatModel):
@@ -89,3 +92,22 @@ def get_chat_model(settings: Settings | None = None) -> BaseChatModel:
 
 def is_fake_model(model: BaseChatModel) -> bool:
     return isinstance(model, FakeChatModel)
+
+
+async def safe_ainvoke(llm: BaseChatModel, messages: list[BaseMessage], *, node: str) -> str | None:
+    """Call the LLM and return its text, or None if the call raised.
+
+    `rag_agent`/`smalltalk_agent`/`tool_agent` all funnel their generation
+    call through here rather than each catching provider exceptions
+    themselves: a real Anthropic/OpenAI outage, rate limit, or timeout should
+    degrade this turn's answer (an unset `draft_answer` already flows into
+    `guardrail_agent.py`'s NO_DRAFT_PRODUCED fallback), not 500 the whole
+    `/chat` request. One hardened call site instead of three copies of the
+    same try/except.
+    """
+    try:
+        response = await llm.ainvoke(messages)
+        return str(response.content)
+    except Exception:
+        logger.warning("llm_call_failed", node=node, exc_info=True)
+        return None

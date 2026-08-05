@@ -27,6 +27,7 @@ from agents.prompts.tool_prompt import TOOL_RESULT_SYSTEM_PROMPT
 from agents.state import GraphState
 from agents.tools.mcp_client import InProcessToolClient, MCPToolClient
 from app.core.config import Settings
+from app.core.llm import safe_ainvoke
 from app.core.logging import get_logger
 from schemas.dto import AgentTraceStep, Entity, EntityType, IntentLabel, ToolCallRecord
 
@@ -131,14 +132,21 @@ def build_tool_agent_node(
 
         record = await tool_client.call_tool(tool_name, arguments)
 
-        response = await llm.ainvoke(
+        # If the summarizing LLM call itself fails (provider outage, timeout),
+        # fall back to the deterministic formatter rather than an apology —
+        # the tool result is already real data sitting in `record`; losing it
+        # behind a generic "couldn't answer" message would throw away a
+        # perfectly good answer over an unrelated LLM hiccup.
+        draft_answer = await safe_ainvoke(
+            llm,
             [
                 SystemMessage(content=TOOL_RESULT_SYSTEM_PROMPT),
                 HumanMessage(
                     content=f"Kullanıcı sorusu: {state['user_query']}\n\n{_format_tool_outcome(record)}"
                 ),
-            ]
-        )
+            ],
+            node="tool_agent",
+        ) or _format_tool_outcome(record)
 
         logger.info(
             "tool_agent_call_completed",
@@ -149,7 +157,7 @@ def build_tool_agent_node(
 
         return {
             "tool_calls": [record],
-            "draft_answer": str(response.content),
+            "draft_answer": draft_answer,
             "iteration_count": state.get("iteration_count", 0) + 1,
             "tool_agent_done": True,
             "trace": [

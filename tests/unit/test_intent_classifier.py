@@ -7,9 +7,7 @@ from schemas.dto import Entity, EntityType, IntentLabel
 
 
 def test_rag_query_turkish() -> None:
-    intent, confidence = classify_intent_rule_based(
-        "Kredi kartı komisyon ücreti ne kadar?", []
-    )
+    intent, confidence = classify_intent_rule_based("Kredi kartı komisyon ücreti ne kadar?", [])
     assert intent == IntentLabel.RAG_QUERY
     assert 0.0 < confidence <= 0.95
 
@@ -31,9 +29,7 @@ def test_transaction_action_english() -> None:
 
 
 def test_card_action_turkish() -> None:
-    intent, confidence = classify_intent_rule_based(
-        "Kartımı blokla, kartım çalındı sanırım.", []
-    )
+    intent, confidence = classify_intent_rule_based("Kartımı blokla, kartım çalındı sanırım.", [])
     assert intent == IntentLabel.CARD_ACTION
     assert 0.0 < confidence <= 0.95
 
@@ -55,9 +51,7 @@ def test_escalate_turkish() -> None:
 
 
 def test_out_of_scope_for_unrelated_sentence() -> None:
-    intent, confidence = classify_intent_rule_based(
-        "Bugün dışarıda kediler parkta koşuyordu.", []
-    )
+    intent, confidence = classify_intent_rule_based("Bugün dışarıda kediler parkta koşuyordu.", [])
     assert intent == IntentLabel.OUT_OF_SCOPE
     assert confidence == 0.3
 
@@ -74,9 +68,7 @@ def test_confidence_never_exceeds_cap_even_with_many_keyword_hits() -> None:
 def test_entity_boost_corroborates_weak_keyword_signal() -> None:
     # No CARD_ACTION keyword phrase present, but a CARD_LAST4 entity nudges
     # the score above zero and CARD_ACTION becomes the argmax.
-    entities = [
-        Entity(type=EntityType.CARD_LAST4, value="1234", normalized="1234", confidence=1.0)
-    ]
+    entities = [Entity(type=EntityType.CARD_LAST4, value="1234", normalized="1234", confidence=1.0)]
     intent, confidence = classify_intent_rule_based("Kartla ilgili bir şey var 1234", entities)
     assert intent == IntentLabel.CARD_ACTION
     assert confidence == 0.55  # base 0.4 + one boost point * 0.15

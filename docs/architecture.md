@@ -68,9 +68,24 @@ doğrudan çağırır — ayrı bir süreç ayağa kaldırmadan hızlı, determi
 - Yapısal loglama (`structlog`, `app/core/logging.py`) her log satırına `request_id` +
   `conversation_id` enjekte eder (`contextvars` ile) — prod'da tek bir konuşmanın loglarını
   paylaşılan bir log akışından grep'lemek mümkün.
+- Her istek/yanıt bir `X-Request-Id` header'ı taşır (`RequestIdMiddleware`, `app/main.py`) —
+  istemci kendi id'sini verirse aynen yansıtılır, vermezse üretilir; loglardaki
+  `request_id` ile birebir eşleşir.
+- `GET /metrics`, `prometheus-fastapi-instrumentator` ile istek sayısı/gecikme
+  histogramını Prometheus formatında sunar. Bu demo'da kimliksiz (auth'suz) —
+  gerçek bir dağıtımda cluster'ın iç ağına kapatılıp Prometheus'un oradan
+  scrape etmesi beklenir, `/chat` ile aynı public dinleyicide durmaz.
 - LangSmith tracing opsiyonel bir açma/kapama anahtarı olarak tanımlı
   (`LANGSMITH_TRACING`) ama bu demo'da varsayılan kapalı — gerçek bir dağıtımda açılması
   önerilir (bkz. README "Sınırlar / sonraki adımlar").
+
+## Dayanıklılık ve kötüye kullanım koruması
+
+- `POST /chat`, `slowapi` ile IP başına `CHAT_RATE_LIMIT` (varsayılan `20/dakika`)
+  sınırlı; aşıldığında `429` + `RATE_LIMITED` döner (bkz. ADR-007).
+- `rag_agent`/`smalltalk_agent`/`tool_agent`'ın LLM çağrıları `app/core/llm.py::safe_ainvoke`
+  ile sarmalı: bir sağlayıcı hatası (timeout, rate limit, 5xx) turu 500'e düşürmek yerine
+  guardrail'in `NO_DRAFT_PRODUCED` yoluna zarifçe düşürür.
 
 ## Ölçeklenebilirlik notları
 

@@ -1,7 +1,10 @@
-.PHONY: install dev lint typecheck test cov seed run mcp docker-build docker-up docker-down
+.PHONY: install hooks dev lint typecheck test cov seed run mcp docker-build docker-up docker-down
 
 install:
 	pip install -e ".[dev]"
+
+hooks:
+	pre-commit install
 
 dev:
 	uvicorn app.main:app --reload --app-dir src --port 8000
