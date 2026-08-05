@@ -26,3 +26,9 @@ stringData:
   ANTHROPIC_API_KEY: "changeme"
   OPENAI_API_KEY: "changeme"
   GOOGLE_API_KEY: "changeme"
+  # Connection strings, not just API keys — they embed credentials, so they
+  # belong in the Secret alongside the provider keys above, not the plain
+  # ConfigMap. Both fall back to an in-process, non-persistent implementation
+  # when unset (see agents/memory.py, mcp_server/tools/banking_repository.py).
+  REDIS_URL: "changeme"
+  DATABASE_URL: "changeme"

@@ -1,18 +1,27 @@
-"""Deterministic, regex-based named entity recognition for banking chat turns.
+"""Bankacılık sohbet mesajları için varlık çıkarımı (NER).
 
-Rule-based on purpose: NER here is a fast, fully auditable first pass — every
-match traces back to an explicit pattern, so it's trivially unit-testable and
-has zero network/latency cost on the hot path. A production system would
-likely add a statistical or LLM-based NER pass alongside this one for recall
-on entities that don't fit a fixed pattern (free-form person names, unusual
-phrasing); this layer stays the deterministic, testable core underneath that.
+Regex katmanı (`extract_entities`) hızlı ve tamamen denetlenebilir bir ilk
+geçiş — her eşleşme açık bir desene dayanıyor. Ama regex'in hiç yakalayamadığı
+bir şey var: serbest metin kişi adları, ya da alışılmadık bir ifadeyle
+söylenmiş tarih/tutar. `extract_entities_with_llm` bunun için var — regex
+sonucunu her zaman baz alıp, gerçek bir model bağlıysa üstüne bir LLM geçişi
+ekliyor (bkz. ADR-011).
 """
 
 from __future__ import annotations
 
 import re
 
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import HumanMessage, SystemMessage
+from pydantic import BaseModel, Field
+
+from agents.prompts.ner_prompt import NER_SYSTEM_PROMPT
+from app.core.llm import is_fake_model
+from app.core.logging import get_logger
 from schemas.dto import Entity, EntityType
+
+logger = get_logger(__name__)
 
 # TR IBAN: "TR" + 2 check digits + 5 groups of 4 + a final 2 = 26 characters,
 # with optional single spaces between groups (how humans actually type them).
@@ -242,7 +251,70 @@ def extract_entities(text: str) -> list[Entity]:
         *_extract_card_last4(text),
         *_extract_account_types(text),
     ]
-    # Sort by position so trace/API output reads left-to-right like the
-    # source message, regardless of which sub-extractor found what.
+    # Pozisyona göre sırala ki trace/API çıktısı, hangi alt-extractor bulmuş
+    # olursa olsun kaynak mesajla aynı soldan-sağa sırayı taşısın.
     entities.sort(key=lambda entity: entity.start if entity.start is not None else 0)
     return entities
+
+
+class _ExtractedEntity(BaseModel):
+    type: EntityType
+    value: str
+    normalized: str | None = None
+
+
+class _NERExtraction(BaseModel):
+    entities: list[_ExtractedEntity] = Field(default_factory=list)
+
+
+def _dedup_key(entity_type: EntityType, value: str) -> tuple[EntityType, str]:
+    return entity_type, value.strip().lower()
+
+
+async def extract_entities_with_llm(text: str, llm: BaseChatModel) -> list[Entity]:
+    """Regex geçişini her zaman çalıştırır; gerçek bir model bağlıysa üstüne
+    bir LLM geçişi ekleyip regex'in kaçırdıklarını (özellikle PERSON_NAME)
+    birleştirir.
+
+    Fake modelde (`is_fake_model`) ya da LLM çağrısı/parse başarısız olursa
+    sadece regex sonucuna düşer — `intent_classifier.classify_intent`'teki
+    aynı fail-open mantık.
+    """
+    rule_based = extract_entities(text)
+
+    if is_fake_model(llm):
+        return rule_based
+
+    try:
+        structured_llm = llm.with_structured_output(_NERExtraction)
+        result = await structured_llm.ainvoke(
+            [SystemMessage(content=NER_SYSTEM_PROMPT), HumanMessage(content=text)]
+        )
+        if not isinstance(result, _NERExtraction):
+            raise TypeError(f"beklenmeyen structured output tipi: {type(result)!r}")
+    except Exception:
+        logger.warning("ner_llm_extraction_failed", text_preview=text[:120], exc_info=True)
+        return rule_based
+
+    seen = {_dedup_key(e.type, e.normalized or e.value) for e in rule_based}
+    merged = list(rule_based)
+    for extracted in result.entities:
+        key = _dedup_key(extracted.type, extracted.normalized or extracted.value)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(
+            Entity(
+                type=extracted.type,
+                value=extracted.value,
+                normalized=extracted.normalized,
+                # LLM karakter offset'i vermiyor; confidence de regex'in tam
+                # eşleşmesi kadar kesin değil — bunu 1.0 göstermek yanıltıcı olurdu.
+                confidence=0.75,
+            )
+        )
+
+    # Stabil sıralama: regex'in bulduğu (start bilinen, zaten pozisyona göre
+    # sıralı) varlıklar önce, LLM'in eklediği (start'ı olmayan) varlıklar sonra.
+    merged.sort(key=lambda entity: entity.start is None)
+    return merged

@@ -1,7 +1,7 @@
-"""Integration tests: real graph wiring (agents/graph.py), fake LLM/embeddings,
-no network. These exercise the actual FastAPI app + LangGraph compiled graph,
-not mocks of them — the point is to catch wiring bugs (wrong node name, missing
-edge) that unit tests of individual nodes can't see.
+"""Entegrasyon testleri: gerçek graf bağlantısı (agents/graph.py), sahte
+LLM/embedding, ağ yok. Bunlar mock değil gerçek FastAPI uygulaması + derlenmiş
+LangGraph grafiğini çalıştırıyor — amaç, tek tek düğüm testlerinin
+göremeyeceği bağlantı hatalarını (yanlış düğüm adı, eksik kenar) yakalamak.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.main import app
-from mcp_server.tools.banking_tools import _ACCOUNTS
+from mcp_server.tools.banking_repository import _fallback_repository
 
 
 @pytest.fixture
@@ -51,9 +51,9 @@ async def test_chat_rag_query_returns_citations_or_honest_gap(client: AsyncClien
     assert response.status_code == 200
     body = response.json()
     assert body["intent"] == "RAG_QUERY"
-    # The vector store may not be seeded in a test environment (scripts/seed_vectorstore.py
-    # is a separate, explicit step) — citations can legitimately be empty, but the
-    # trace must still show the rag_agent actually ran rather than crashing silently.
+    # Test ortamında vektör deposu seed'lenmemiş olabilir (scripts/seed_vectorstore.py
+    # ayrı, açık bir adım) — alıntılar boş olabilir, ama trace rag_agent'ın
+    # gerçekten çalıştığını göstermeli, sessizce çökmediğini değil.
     assert any(step["node"] == "rag_agent" for step in body["trace"])
 
 
@@ -74,9 +74,9 @@ async def test_chat_empty_message_is_rejected_with_422(client: AsyncClient) -> N
 
     assert response.status_code == 422
     body = response.json()
-    # Not FastAPI's default validation-error shape — reshaped by
-    # app/main.py::validation_exception_handler into our own ErrorResponse
-    # contract, the same one every other error path returns.
+    # FastAPI'nin varsayılan doğrulama-hatası şekli değil — app/main.py'deki
+    # validation_exception_handler tarafından kendi ErrorResponse
+    # sözleşmemize dönüştürülmüş, diğer her hata yolunun döndürdüğü şeyin aynısı.
     assert body["code"] == "VALIDATION_ERROR"
     assert body["details"]["errors"]
 
@@ -94,8 +94,8 @@ async def test_every_response_carries_a_request_id_header(client: AsyncClient) -
     response = await client.get("/healthz")
 
     assert "x-request-id" in response.headers
-    # A caller-supplied id should be echoed back, not replaced — it's what
-    # lets a request be traced across services that each add their own hop.
+    # Çağıranın gönderdiği id yankılanmalı, değiştirilmemeli — bu, her hop'ta
+    # kendi id'sini ekleyen servisler arasında isteğin izlenebilmesini sağlar.
     traced = await client.get("/healthz", headers={"X-Request-Id": "trace-abc-123"})
     assert traced.headers["x-request-id"] == "trace-abc-123"
 
@@ -103,10 +103,10 @@ async def test_every_response_carries_a_request_id_header(client: AsyncClient) -
 async def test_chat_rate_limit_returns_429_after_the_configured_burst(
     client: AsyncClient,
 ) -> None:
-    # The route is decorated with @limiter.limit(settings.chat_rate_limit),
-    # default "20/minute" (see app/core/config.py); firing one more than that
-    # in a tight loop must trip it — every LLM call behind /chat costs real
-    # money, so this is a real safeguard, not a formality.
+    # Route @limiter.limit(settings.chat_rate_limit) ile dekore edilmiş,
+    # varsayılan "20/minute" (bkz. app/core/config.py); sıkı bir döngüde
+    # bir fazlasını ateşlemek tetiklemeli — /chat'in arkasındaki her LLM
+    # çağrısı gerçek para demek, bu formalite değil gerçek bir koruma.
     responses = [await client.post("/chat", json={"message": "merhaba"}) for _ in range(21)]
 
     assert responses[-1].status_code == 429
@@ -116,7 +116,7 @@ async def test_chat_rate_limit_returns_429_after_the_configured_burst(
 
 
 async def test_metrics_endpoint_exposes_prometheus_format(client: AsyncClient) -> None:
-    await client.get("/healthz")  # make sure at least one request has been instrumented
+    await client.get("/healthz")  # instrumente edilmiş en az bir istek olduğundan emin ol
 
     response = await client.get("/metrics")
 
@@ -127,9 +127,9 @@ async def test_metrics_endpoint_exposes_prometheus_format(client: AsyncClient) -
 async def test_multi_turn_slot_fill_completes_a_card_action_across_two_requests(
     client: AsyncClient,
 ) -> None:
-    """The scenario ADR-008 exists for: a bare follow-up answer, in the same
-    conversation, actually completes the request instead of being treated as
-    a brand-new, unrelated message."""
+    """ADR-008'in var olma sebebi olan senaryo: aynı konuşmadaki çıplak bir
+    takip cevabı, alakasız yeni bir mesaj gibi değil, isteği gerçekten
+    tamamlayan bir cevap gibi işlenmeli."""
     first = await client.post(
         "/chat", json={"conversation_id": "multi-turn-1", "message": "kartımı blokla"}
     )
@@ -145,12 +145,11 @@ async def test_multi_turn_slot_fill_completes_a_card_action_across_two_requests(
     assert second.status_code == 200
     second_body = second.json()
 
-    # "4321" is the real fixture card in mcp_server/tools/banking_tools.py —
-    # picked deliberately (not an arbitrary-looking number) so a real match
-    # in _ACCOUNTS is exercised, not just the entity-synthesis mechanics.
-    # The bare digits alone have no keyword ner_extractor would normally
-    # anchor a CARD_LAST4 match on — this only works because memory_load
-    # carried the pending request from the first turn (see ADR-008).
+    # "4321" banking_repository.py'deki gerçek fixture kartı — rastgele
+    # görünen bir sayı değil, bilinçli seçildi. Çıplak rakamların
+    # ner_extractor'ın normalde tutunacağı bir anahtar kelimesi yok — bu
+    # sadece memory_load ilk turdan bekleyen isteği taşıdığı için çalışıyor
+    # (bkz. ADR-008).
     assert second_body["intent"] == "CARD_ACTION"
     assert len(second_body["tool_calls"]) == 1
     assert second_body["tool_calls"][0]["tool_name"] == "block_card"
@@ -160,8 +159,8 @@ async def test_multi_turn_slot_fill_completes_a_card_action_across_two_requests(
     assert "memory_load" in node_sequence
     assert "tool_agent" in node_sequence
 
-    # restore fixture state so this test doesn't leak into others
-    for account in _ACCOUNTS.values():
+    # fixture durumunu geri al ki bu test başkalarına sızmasın
+    for account in _fallback_repository._accounts.values():
         for card in account["cards"]:  # type: ignore[union-attr]
             if card["last4"] == "4321":
                 card["status"] = "active"

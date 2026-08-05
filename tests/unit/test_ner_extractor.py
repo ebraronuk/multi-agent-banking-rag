@@ -1,8 +1,19 @@
-"""Unit tests for nlp/ner_extractor.py — pure, deterministic, no network/LLM."""
+"""nlp/ner_extractor.py için birim testler.
+
+Regex katmanı (`extract_entities`) saf ve deterministik, ağ/LLM gerektirmez.
+`extract_entities_with_llm`'in fake-model ve mocklu-LLM yolları dosyanın
+sonunda ayrıca test ediliyor.
+"""
 
 from __future__ import annotations
 
-from nlp.ner_extractor import extract_entities
+from app.core.llm import FakeChatModel
+from nlp.ner_extractor import (
+    _ExtractedEntity,
+    _NERExtraction,
+    extract_entities,
+    extract_entities_with_llm,
+)
 from schemas.dto import EntityType
 
 
@@ -159,3 +170,68 @@ def test_extract_account_type() -> None:
 
 def test_extract_entities_returns_empty_list_for_irrelevant_text() -> None:
     assert extract_entities("Bugün dışarıda kediler parkta koşuyordu.") == []
+
+
+class _StubStructuredModel:
+    """`with_structured_output(...).ainvoke(...)` çağrısını taklit eden minimal
+    bir test çifti — gerçek bir `BaseChatModel` olmasına gerek yok, sadece
+    `is_fake_model()`'in False dönmesi (FakeChatModel örneği olmadığı için
+    zaten öyle) ve bu iki metodun var olması yeterli."""
+
+    def __init__(self, extraction: _NERExtraction | None = None, raises: Exception | None = None) -> None:
+        self._extraction = extraction
+        self._raises = raises
+
+    def with_structured_output(self, schema: object) -> _StubStructuredModel:
+        return self
+
+    async def ainvoke(self, messages: object) -> _NERExtraction:
+        if self._raises:
+            raise self._raises
+        assert self._extraction is not None
+        return self._extraction
+
+
+async def test_extract_entities_with_llm_uses_only_regex_for_fake_model() -> None:
+    text = "Kartımın son 4 hanesi 1234 ile ilgili bir sorun var."
+
+    result = await extract_entities_with_llm(text, FakeChatModel())
+
+    assert result == extract_entities(text)
+
+
+async def test_extract_entities_with_llm_merges_person_name_from_llm() -> None:
+    text = "Ayşe Yılmaz adına bir işlem yapmak istiyorum."
+    stub = _StubStructuredModel(
+        _NERExtraction(entities=[_ExtractedEntity(type=EntityType.PERSON_NAME, value="Ayşe Yılmaz")])
+    )
+
+    result = await extract_entities_with_llm(text, stub)  # type: ignore[arg-type]
+
+    person_entities = [e for e in result if e.type == EntityType.PERSON_NAME]
+    assert len(person_entities) == 1
+    assert person_entities[0].value == "Ayşe Yılmaz"
+    assert person_entities[0].confidence == 0.75  # regex'in 1.0'ı kadar kesin değil
+
+
+async def test_extract_entities_with_llm_does_not_duplicate_entity_already_found_by_regex() -> None:
+    iban = "TR330006100519786457841326"
+    text = f"IBAN'ım {iban}."
+    # Model aynı IBAN'ı da rapor ediyor — regex zaten bulduğu için tekrar sayılmamalı.
+    stub = _StubStructuredModel(
+        _NERExtraction(entities=[_ExtractedEntity(type=EntityType.IBAN, value=iban, normalized=iban)])
+    )
+
+    result = await extract_entities_with_llm(text, stub)  # type: ignore[arg-type]
+
+    iban_entities = [e for e in result if e.type == EntityType.IBAN]
+    assert len(iban_entities) == 1
+
+
+async def test_extract_entities_with_llm_falls_back_to_regex_on_llm_failure() -> None:
+    text = "Kartımın son 4 hanesi 1234."
+    stub = _StubStructuredModel(raises=RuntimeError("provider outage"))
+
+    result = await extract_entities_with_llm(text, stub)  # type: ignore[arg-type]
+
+    assert result == extract_entities(text)

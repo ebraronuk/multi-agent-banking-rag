@@ -1,25 +1,26 @@
-"""LangGraph node wrapping the rule-based NER pass.
+"""Varlık çıkarımı (NER) düğümü.
 
-Runs after `memory_load` and before `intent_agent`, so it can see what the
-*previous* turn was waiting to hear back (`state["carried_pending_request"]`,
-set by `memory_agent.py` — see ADR-008) and, in addition to its normal regex
-extraction, recognize a bare follow-up answer ("1234") that on its own has no
-keyword for the regexes to anchor on.
+`memory_load`'dan sonra, `intent_agent`'tan önce çalışıyor — böylece önceki
+turn'ün ne beklediğini görebiliyor (`state["carried_pending_request"]`, bkz.
+ADR-008) ve normal çıkarımına ek olarak, tek başına hiçbir anahtar kelimeye
+anchor'lanamayan çıplak bir takip cevabını ("1234") tanıyabiliyor.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
+
+from langchain_core.language_models.chat_models import BaseChatModel
 
 from agents.memory import synthesize_bare_answer_entity
 from agents.state import GraphState
-from nlp.ner_extractor import extract_entities
+from nlp.ner_extractor import extract_entities_with_llm
 from schemas.dto import AgentTraceStep, Entity
 
 
-def build_ner_node() -> Callable[[GraphState], dict[str, object]]:
-    def ner_node(state: GraphState) -> dict[str, object]:
-        entities = extract_entities(state["user_query"])
+def build_ner_node(llm: BaseChatModel) -> Callable[[GraphState], Awaitable[dict[str, object]]]:
+    async def ner_node(state: GraphState) -> dict[str, object]:
+        entities = await extract_entities_with_llm(state["user_query"], llm)
         summary = f"extracted {len(entities)} entity(ies)"
 
         pending = state.get("carried_pending_request")

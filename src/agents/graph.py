@@ -59,7 +59,7 @@ def build_graph(settings: Settings) -> CompiledStateGraph:
     # factory-built one does). Runtime behaviour is verified by the full test
     # suite in tests/integration and tests/e2e, which exercises every node.
     graph.add_node(NODE_MEMORY_LOAD, build_memory_load_node(memory))  # type: ignore[call-overload]
-    graph.add_node(NODE_NER, build_ner_node())  # type: ignore[call-overload]
+    graph.add_node(NODE_NER, build_ner_node(llm))  # type: ignore[call-overload]
     graph.add_node(NODE_INTENT, build_intent_node(llm))  # type: ignore[call-overload]
     graph.add_node(NODE_SUPERVISOR, supervisor_node)
     graph.add_node(NODE_RAG_AGENT, build_rag_node(retriever, llm))  # type: ignore[arg-type]

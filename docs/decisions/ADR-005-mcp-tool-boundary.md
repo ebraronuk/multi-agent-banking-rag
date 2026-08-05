@@ -7,13 +7,12 @@ dünyaya etki eden" işlemleri çağırması gerekiyor. Bu işlemler bugün mock
 entegrasyonuna geçişi kolaylaştırıp zorlaştırmayacağını belirliyor.
 
 ## Seçenekler
-- **A: Doğrudan Python fonksiyon çağrısı** (`tool_agent` doğrudan `banking_tools.get_balance(...)`
+- **A: Doğrudan Python fonksiyon çağrısı** (`tool_agent` doğrudan `banking_repository`'yi
   import edip çağırır). En basit, ama araçlar ile ajan aynı process/aynı dil ile
   sıkı bağlı kalır; araçları ayrı bir ekip/servis olarak ölçeklemek zorlaşır.
 - **B: FastMCP üzerinden MCP protokolü** — araçlar ayrı bir process (`mcp_server/server.py`)
-  olarak çalışır, ajan onlara ağ üzerinden (MCP client) bağlanır. İş ilanının da açıkça
-  aradığı bir teknoloji (FastMCP), ve gerçek dünyada "araç sağlayıcı takım" ile
-  "ajan takımı" farklı ekipler olduğunda doğal sınırı bu şekilde çiziyor.
+  olarak çalışır, ajan onlara ağ üzerinden (MCP client) bağlanır. Gerçek dünyada "araç
+  sağlayıcı takım" ile "ajan takımı" farklı ekipler olduğunda doğal sınırı bu şekilde çizer.
 
 ## Tercih
 **B, ama in-process bir düşüş (fallback) yolu ile.** `agents/tools/mcp_client.py` iki
@@ -24,7 +23,7 @@ veriyor. Böylece hem MCP'nin gösterdiği "araçlar ayrı bir servis" mimarisi 
 testlerin ağ/sunucu ayağa kaldırmadan çalışabilmesi bir arada sağlanıyor.
 
 ## Sonuçlar
-- ✅ İş ilanının aradığı FastMCP entegrasyonu gerçek, çalışan bir örnekle gösteriliyor.
+- ✅ FastMCP entegrasyonu gerçek, çalışan bir örnekle gösteriliyor.
 - ✅ Birim testler bir MCP sunucusu ayağa kaldırmadan (`InProcessToolClient`) çalışıyor.
 - ❌ İki client sınıfını senkron tutma yükü var (aynı `ToolCallRecord` sözleşmesine uymaları
   gerekiyor) — kabul edilebilir, çünkü bu tam da "iki path'in de gerçekten çalıştığını"

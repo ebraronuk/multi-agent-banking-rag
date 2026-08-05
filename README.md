@@ -11,10 +11,11 @@ ve kural tabanlı bir güvenlik katmanı — hepsi [LangGraph](https://github.co
 ile orkestre edilmiş tek bir state machine üzerinde.
 
 > **Bu bir portföy/demo projesidir.** "DemoBank A.Ş." kurgusal bir bankadır; hesap/işlem
-> verisi bellek-içi (in-memory) fixture'dır, gerçek bir çekirdek bankacılık sistemine
-> bağlanmaz. Amaç, gerçek bir üründe kullanılacak kalitede bir **mimari** ve **mühendislik
-> pratiği** göstermek. Neyin bilinçli olarak basitleştirildiği aşağıda ve
-> [`docs/architecture.md`](docs/architecture.md)'de açıkça belirtiliyor — gizlenmiyor.
+> verisi gerçek bir Postgres'te (bkz. `db/schema.sql`, ADR-010) ya da `DATABASE_URL`
+> yoksa bellek-içi bir fixture'da yaşıyor — ama hiçbir şekilde gerçek bir çekirdek
+> bankacılık sistemine bağlanmıyor. Amaç, gerçek bir üründe kullanılacak kalitede bir
+> **mimari** ve **mühendislik pratiği** göstermek. Neyin bilinçli olarak basitleştirildiği
+> aşağıda ve [`docs/architecture.md`](docs/architecture.md)'de açıkça belirtiliyor — gizlenmiyor.
 
 ## Ne yapar bu sistem?
 
@@ -103,6 +104,8 @@ Detaylı diyagram, süreç sınırları ve ölçeklenebilirlik notları için �
 | Hata taksonomisi | HTTP hataları sadece gerçekten raise edilenlerle sınırlı; ajan-seviyesi aksamalar 200 + flag | Kullanılmayan bir hata kodu, hiç olmamasından beter ([ADR-007](docs/decisions/ADR-007-error-taxonomy-and-resilience.md)) |
 | Konuşma hafızası | Redis + in-memory fallback, açık "bekleyen slot" takibi | "4321" gibi bağlamsız bir cevabın hangi isteği tamamladığını anlamak ([ADR-008](docs/decisions/ADR-008-conversation-memory-slot-fill.md)) |
 | Araç planlama | Fake modda deterministik eşleme; gerçek modda `bind_tools` akıl yürütme döngüsü + argüman doğrulama | Bileşik istekleri çözerken halüsinasyonlu para/kart işlemine izin vermemek ([ADR-009](docs/decisions/ADR-009-llm-planned-tool-reasoning.md)) |
+| Bankacılık verisi | Postgres (`accounts`/`cards`/`transactions`) + in-memory fallback | Gerçek parametreli SQL, ama `DATABASE_URL` yoksa CI/lokal geliştirme yine sıfır altyapıyla çalışsın ([ADR-010](docs/decisions/ADR-010-postgres-banking-data.md)) |
+| Varlık çıkarımı (NER) | Regex taban + gerçek modda ek bir LLM geçişi | Regex'in kör olduğu serbest metin (kişi adı vb.) için recall, kesin alanlarda regex'in hızı/kesinliği korunuyor ([ADR-011](docs/decisions/ADR-011-hybrid-ner.md)) |
 
 ## Üretime dönük detaylar (demo kapsamında ama gerçek)
 
@@ -130,8 +133,9 @@ docker compose -f docker/docker-compose.yml up --build
 
 API `http://localhost:8000`'de ayağa kalkar (`GET /healthz`, `GET /readyz`), MCP araç
 sunucusu `http://localhost:8765`'te, konuşma hafızası için bir Redis (`redis:7-alpine`,
-kalıcılık olmadan — bkz. ADR-008). Bilgi tabanını doldurmak için (RAG cevaplarının
-alıntı yapabilmesi için gerekli):
+kalıcılık olmadan — bkz. ADR-008), bankacılık verisi için bir Postgres (`postgres:16-alpine`,
+şeması ve seed'i `db/schema.sql`'den ilk açılışta otomatik uygulanır — bkz. ADR-010).
+Bilgi tabanını doldurmak için (RAG cevaplarının alıntı yapabilmesi için gerekli):
 
 ```bash
 python scripts/seed_vectorstore.py
@@ -186,10 +190,11 @@ kurulmaz — bu durumda Docker akışını kullanın. 3.11+ varsa:
 ```bash
 python3.11 -m venv .venv && source .venv/bin/activate
 make install
-make hooks  # ruff lint+format'ı her commit'ten önce otomatik çalıştırır
-make seed   # bilgi tabanını doldur
-make dev    # http://localhost:8000, --reload
-make mcp    # ayrı bir terminalde: araç sunucusu
+make hooks    # ruff lint+format'ı her commit'ten önce otomatik çalıştırır
+make seed     # bilgi tabanını doldur
+make seed-db  # DATABASE_URL set edilmişse: bankacılık şemasını + seed'ini uygula
+make dev      # http://localhost:8000, --reload
+make mcp      # ayrı bir terminalde: araç sunucusu
 ```
 
 ## Test
@@ -200,9 +205,10 @@ make lint         # ruff
 make typecheck    # mypy --strict'e yakın
 ```
 
-Test piramidi: saf mantık (NER regex'leri, intent kural motoru, guardrail redaksiyonu,
-supervisor routing) birim testle; `/chat` uç noktası + graph wiring entegrasyon testiyle;
-tek bir uçtan-uca "EFT limiti sor → alıntılı yanıt al" akışı e2e testiyle kapsanıyor.
+Test piramidi: saf mantık (NER regex'leri + LLM birleştirme mantığı, intent kural motoru,
+guardrail redaksiyonu, supervisor routing) birim testle; `/chat` uç noktası + graph wiring
+entegrasyon testiyle; tek bir uçtan-uca "EFT limiti sor → alıntılı yanıt al" akışı e2e
+testiyle kapsanıyor.
 
 ## Değerlendirme (evaluation)
 
@@ -239,6 +245,10 @@ merkezinde, bu yüzden izlenebilirlik sona eklenen bir özellik değil.
   auth middleware'i gerektirir.
 - Değerlendirme seti küçük ve elle etiketlenmiş (RAGAS gibi bir çerçeve değil) —
   bilinçli bir kapsam kararı, bkz. "Değerlendirme" bölümü.
+- Postgres şeması elle yazılan tek bir `db/schema.sql` — bir migration aracı (Alembic vb.)
+  bu demo'nun kapsamı dışında bırakıldı (bkz. ADR-010).
+- LLM tabanlı NER geçişi karakter offset'i vermiyor (`start`/`end` boş kalıyor) —
+  regex'in bulduklarıyla dedup, tip + normalize-değer eşleşmesine dayanıyor (bkz. ADR-011).
 
 ## Kubernetes
 

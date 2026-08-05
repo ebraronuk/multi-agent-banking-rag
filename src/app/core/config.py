@@ -1,6 +1,6 @@
-"""Single access point for environment configuration (Zod-equivalent: pydantic-settings).
+"""Ortam yapılandırması için tek erişim noktası.
 
-Nothing else in the codebase should read `os.environ` directly — import `get_settings()`.
+Kod tabanındaki hiçbir yer `os.environ`'a doğrudan bakmamalı — `get_settings()` import edilir.
 """
 
 from __future__ import annotations
@@ -62,8 +62,13 @@ class Settings(BaseSettings):
 
     redis_url: str | None = Field(
         default=None,
-        description="If unset, conversation memory falls back to an in-process dict "
-        "(fine for local dev/tests, lost on restart, not shared across replicas).",
+        description="Boşsa konuşma hafızası bellek-içi bir dict'e düşer "
+        "(lokal geliştirme/testler için sorun değil, restart'ta kaybolur, replikalar arası paylaşılmaz).",
+    )
+    database_url: str | None = Field(
+        default=None,
+        description="Bankacılık verisi (accounts/cards/transactions) için Postgres DSN'i. "
+        "Boşsa bankacılık araçları bellek-içi bir dict'e düşer (bkz. db/schema.sql).",
     )
     conversation_history_limit: int = Field(default=6, ge=1, le=50)
     conversation_ttl_seconds: int = Field(default=86400, ge=60)
@@ -79,17 +84,13 @@ class Settings(BaseSettings):
 
     @property
     def mcp_server_url(self) -> str:
-        # "/mcp" is FastMCP's default streamable-HTTP path (`fastmcp.settings.streamable_http_path`)
-        # — the path `mcp_server.server` actually serves on, verified against the pinned version.
+        # "/mcp" FastMCP'nin varsayılan streamable-HTTP yolu.
         return f"http://{self.mcp_server_host}:{self.mcp_server_port}/mcp"
 
     def resolved_llm_provider(self) -> LLMProvider:
-        """Fail open to FAKE instead of crashing when no key is configured.
-
-        A portfolio/demo deployment (and CI) must boot and serve traffic without
-        real credentials; the fake client keeps behaviour deterministic instead
-        of silently disabling the feature.
-        """
+        """Anahtar yoksa çökmek yerine FAKE'e düşer — CI ve anahtarsız lokal
+        çalıştırma her zaman ayakta kalmalı, sessizce özelliği kapatmak yerine
+        deterministik sahte istemci devreye girer."""
         if self.llm_provider == LLMProvider.ANTHROPIC and not self.anthropic_api_key:
             return LLMProvider.FAKE
         if self.llm_provider == LLMProvider.OPENAI and not self.openai_api_key:

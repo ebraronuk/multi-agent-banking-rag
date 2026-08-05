@@ -1,11 +1,10 @@
-"""Unit tests for `agents/tools/mcp_client.py`.
+"""`agents/tools/mcp_client.py` için birim testler.
 
-`InProcessToolClient` calls plain functions directly and needs no mocking.
-`MCPToolClient` talks to a real FastMCP server over HTTP — no server is
-spun up here (that's the integration/e2e suite's job, and was verified
-manually against a running `mcp_server.server` container), but its own
-logic (result-shape coercion, exception-to-ToolCallRecord mapping) is pure
-and fully testable by faking `fastmcp.Client` itself.
+`InProcessToolClient`, kendi `InMemoryBankingRepository` örneğini çağırır —
+mock gerekmez. `MCPToolClient` gerçek bir FastMCP sunucusuna HTTP üzerinden
+gider (bu, entegrasyon/e2e paketinin işi ve gerçek bir container'a karşı elle
+doğrulandı) — kendi mantığı (sonuç şekli dönüştürme, exception'ı
+ToolCallRecord'a eşleme) burada `fastmcp.Client`'ı sahteleyerek test ediliyor.
 """
 
 from __future__ import annotations
@@ -13,19 +12,19 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, patch
 
 from agents.tools.mcp_client import InProcessToolClient, MCPToolClient
-from mcp_server.tools.banking_tools import _ACCOUNTS
+from mcp_server.tools.banking_repository import SEED_ACCOUNTS, InMemoryBankingRepository
 from schemas.dto import ToolCallRecord
 
 
 class _FakeNetworkResult:
-    """Stands in for fastmcp's `CallToolResult` wrapper (exposes `.data`)."""
+    """fastmcp'nin `CallToolResult` sarmalayıcısını (`.data` alanı) taklit eder."""
 
     def __init__(self, data: dict[str, object]) -> None:
         self.data = data
 
 
 class _FakeClientContext:
-    """Fakes the `async with Client(url) as client: ...` shape."""
+    """`async with Client(url) as client: ...` şeklini taklit eder."""
 
     def __init__(
         self, call_tool_return: object = None, call_tool_side_effect: Exception | None = None
@@ -40,11 +39,11 @@ class _FakeClientContext:
 
 
 def _first_account_id() -> str:
-    return next(iter(_ACCOUNTS))
+    return next(iter(SEED_ACCOUNTS))
 
 
 async def test_known_account_returns_ok_record_with_data() -> None:
-    client = InProcessToolClient()
+    client = InProcessToolClient(InMemoryBankingRepository())
     account_id = _first_account_id()
 
     record = await client.call_tool("get_balance", {"account_id": account_id})
@@ -58,7 +57,7 @@ async def test_known_account_returns_ok_record_with_data() -> None:
 
 
 async def test_business_failure_is_surfaced_without_raising() -> None:
-    client = InProcessToolClient()
+    client = InProcessToolClient(InMemoryBankingRepository())
 
     record = await client.call_tool("get_balance", {"account_id": "TR000000000000000000000000"})
 
@@ -67,7 +66,7 @@ async def test_business_failure_is_surfaced_without_raising() -> None:
 
 
 async def test_unknown_tool_name_degrades_gracefully() -> None:
-    client = InProcessToolClient()
+    client = InProcessToolClient(InMemoryBankingRepository())
 
     record = await client.call_tool("not_a_real_tool", {})
 
@@ -76,9 +75,9 @@ async def test_unknown_tool_name_degrades_gracefully() -> None:
 
 
 async def test_bad_arguments_are_wrapped_instead_of_raising() -> None:
-    client = InProcessToolClient()
+    client = InProcessToolClient(InMemoryBankingRepository())
 
-    # Missing the required "account_id" kwarg -> TypeError inside get_balance.
+    # Zorunlu "account_id" argümanı eksik -> get_balance içinde TypeError.
     record = await client.call_tool("get_balance", {})
 
     assert record.ok is False
@@ -86,19 +85,14 @@ async def test_bad_arguments_are_wrapped_instead_of_raising() -> None:
 
 
 async def test_block_card_flips_status_via_the_client() -> None:
-    client = InProcessToolClient()
+    client = InProcessToolClient(InMemoryBankingRepository())
     account_id = _first_account_id()
-    card = _ACCOUNTS[account_id]["cards"][0]  # type: ignore[index]
-    last4 = card["last4"]
-    original_status = card["status"]
+    last4 = SEED_ACCOUNTS[account_id]["cards"][0]["last4"]  # type: ignore[index]
 
-    try:
-        record = await client.call_tool("block_card", {"card_last4": last4, "reason": "test"})
+    record = await client.call_tool("block_card", {"card_last4": last4, "reason": "test"})
 
-        assert record.ok is True
-        assert record.result["data"]["status"] == "blocked"
-    finally:
-        card["status"] = original_status
+    assert record.ok is True
+    assert record.result["data"]["status"] == "blocked"
 
 
 async def test_mcp_client_coerces_a_data_wrapped_network_result() -> None:

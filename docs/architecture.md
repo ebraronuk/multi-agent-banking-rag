@@ -35,7 +35,7 @@ flowchart TD
 | Düğüm | Sorumluluk | LLM kullanır mı? | Kaynak |
 |---|---|---|---|
 | `memory_load` | Redis'ten (ya da in-memory fallback) geçmiş turları + bekleyen slot-doldurma isteğini yükle | Hayır | `src/agents/memory.py`, `src/agents/workers/memory_agent.py` |
-| `ner_agent` | IBAN, tutar/döviz, tarih, kart son 4 hane, hesap türü çıkarımı + bekleyen bir slot varsa bariz cevabı sentezleme | Hayır (regex) | `src/nlp/ner_extractor.py`, `src/agents/memory.py::synthesize_bare_answer_entity` |
+| `ner_agent` | IBAN, tutar/döviz, tarih, kart son 4 hane, hesap türü, kişi adı çıkarımı + bekleyen bir slot varsa bariz cevabı sentezleme | Regex her zaman; fake modda hayır, gerçek modda ek bir LLM geçişi de var (bkz. ADR-011) | `src/nlp/ner_extractor.py`, `src/agents/memory.py::synthesize_bare_answer_entity` |
 | `intent_agent` | 7 sınıftan niyet sınıflandırma; bekleyen slot cevaplandıysa niyeti yeniden sınıflandırmadan sürdürür | Fake modda hayır, gerçek modda evet (yapılandırılmış çıktı + kural tabanlı fallback) | `src/nlp/intent_classifier.py` |
 | `supervisor` | Rota kararı + iz kaydı | Hayır (kasıtlı olarak, bkz. ADR-002) | `src/agents/supervisor.py` |
 | `rag_agent` | Hibrit (vektör+BM25) retrieval + alıntılı yanıt (geçmişi bağlam olarak kullanır) | Evet | `src/rag/retriever.py`, `src/agents/workers/rag_agent.py` |
@@ -55,15 +55,17 @@ flowchart LR
         GRAPH -->|MCP client<br/>HTTP| MCPSRV
     end
     subgraph "mcp process (FastMCP)"
-        MCPSRV[mcp_server.server] --> TOOLS[banking_tools<br/><i>mock fixture veri</i>]
+        MCPSRV[mcp_server.server] --> REPO[banking_repository]
+        REPO --> PG[(Postgres<br/>accounts/cards/transactions)]
     end
     CALLER([istemci]) --> API
 ```
 
-Araç sunucusu (`mcp_server`) bilinçli olarak ayrı bir süreç: iş ilanının aradığı FastMCP
-entegrasyonunu gerçek bir ağ sınırıyla gösteriyor (bkz. ADR-005). Testlerde ve
-`LLM_PROVIDER=fake` modunda `InProcessToolClient` bu sınırı atlayıp aynı fonksiyonları
-doğrudan çağırır — ayrı bir süreç ayağa kaldırmadan hızlı, deterministik testler için.
+Araç sunucusu (`mcp_server`) bilinçli olarak ayrı bir süreç: FastMCP entegrasyonunu gerçek
+bir ağ sınırıyla gösteriyor (bkz. ADR-005). Testlerde ve `LLM_PROVIDER=fake` modunda
+`InProcessToolClient` bu sınırı atlayıp aynı repository'yi doğrudan çağırır — ayrı bir
+süreç ayağa kaldırmadan hızlı, deterministik testler için. `DATABASE_URL` boşsa
+`banking_repository` Postgres yerine bellek-içi bir fixture'a düşer (bkz. ADR-010).
 
 ## Gözlemlenebilirlik
 
@@ -103,6 +105,9 @@ doğrudan çağırır — ayrı bir süreç ayağa kaldırmadan hızlı, determi
 - Vektör deposu (Chroma) tek bir `PersistentVolumeClaim` üzerinden paylaşılıyor — birden
   fazla replika aynı salt-okunur bilgi tabanını okuyor. Yazma (ingest) `scripts/seed_vectorstore.py`
   ile ayrı, çevrimdışı bir adım; API süreçleri runtime'da vektör deposuna yazmıyor.
+- Bankacılık verisi (Postgres) tüm replikalar arasında paylaşılan tek bir kaynak —
+  `banking_repository`'nin kendi bağlantı havuzu var, replika sayısı arttıkça havuz
+  boyutu (`min_size`/`max_size`, bkz. `PostgresBankingRepository`) buna göre ayarlanmalı.
 
 ## Sınırlar (bilinçli, YAGNI kapsamında bırakılan)
 
@@ -112,5 +117,7 @@ doğrudan çağırır — ayrı bir süreç ayağa kaldırmadan hızlı, determi
   sıralayabiliyor, ama turlar arası çok adımlı bir plan (örn. "önce bakiyeme bak, düşükse
   bir uyarı kur") hâlâ yok — grafiğin döngü mekanizması buna hazır, bu demo'nun kapsamı
   dışında bırakıldı.
-- NER kural tabanlı (regex) — üretimde ek bir istatistiksel/LLM NER katmanı recall'u
-  artırır, ama deterministik çekirdek test edilebilirlik için tercih edildi.
+- NER'de LLM geçişi karakter offset'i vermiyor, sadece regex'in bulamadıklarını ekliyor
+  (bkz. ADR-011) — tam bir istatistiksel NER modelinin yerini almıyor.
+- Postgres şeması elle yazılan tek bir `.sql` dosyası — bir migration aracı (Alembic vb.)
+  bu demo'nun kapsamı dışında bırakıldı (bkz. ADR-010).

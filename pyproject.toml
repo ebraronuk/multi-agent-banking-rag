@@ -30,6 +30,7 @@ dependencies = [
     "slowapi>=0.1.9",
     "prometheus-fastapi-instrumentator>=7.0.0",
     "redis>=5.0.0",
+    "asyncpg>=0.30.0",
 ]
 
 [project.optional-dependencies]

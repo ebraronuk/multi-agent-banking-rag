@@ -1,4 +1,4 @@
-.PHONY: install hooks dev lint typecheck test cov seed run mcp docker-build docker-up docker-down
+.PHONY: install hooks dev lint typecheck test cov seed seed-db run mcp docker-build docker-up docker-down
 
 install:
 	pip install -e ".[dev]"
@@ -26,6 +26,9 @@ cov:
 
 seed:
 	python scripts/seed_vectorstore.py
+
+seed-db:
+	python scripts/seed_postgres.py
 
 eval:
 	PYTHONPATH=src python -m evaluation.eval_harness
