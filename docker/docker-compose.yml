@@ -36,23 +36,24 @@ services:
     env_file:
       - ../.env
     environment:
-      # MCP_SERVER_HOST is overloaded: the api service uses it as the hostname
-      # to *connect to* (mcp, via Docker DNS); this process uses the same
-      # setting to decide what to *bind* to. 127.0.0.1 (the .env default,
-      # meant for local-without-Docker dev) would only accept connections from
-      # inside this container's own network namespace — 0.0.0.0 is required
-      # for the api container to reach it at all.
+      # MCP_SERVER_HOST çift anlamlı: api servisi bunu *bağlanılacak* hostname
+      # olarak kullanıyor (mcp, Docker DNS üzerinden); bu süreç aynı ayarı
+      # neye *bind* edileceğine karar vermek için kullanıyor. 127.0.0.1 (.env
+      # varsayılanı, Docker'sız lokal geliştirme içindir) sadece bu
+      # konteynerin kendi ağ namespace'i içinden gelen bağlantıları kabul
+      # ederdi — api konteynerinin buraya ulaşabilmesi için 0.0.0.0 gerekiyor.
       - MCP_SERVER_HOST=0.0.0.0
       - DATABASE_URL=postgresql://demobank:demobank@postgres:5432/demobank
     depends_on:
       - postgres
     restart: unless-stopped
     healthcheck:
-      # FastMCP's streamable-HTTP endpoint isn't a plain GET-able health
-      # route — it correctly answers with 406 ("client must accept
-      # text/event-stream") to a bare GET, which is proof the server is up
-      # and routing requests. No `-f`: curl only fails here on an actual
-      # connection error, not on that expected 406.
+      # FastMCP'nin streamable-HTTP endpoint'i düz bir GET ile kontrol
+      # edilebilir bir health route değil — çıplak bir GET'e doğru şekilde
+      # 406 ("client must accept text/event-stream") ile cevap veriyor, bu da
+      # sunucunun ayakta olduğunun ve istekleri yönlendirdiğinin kanıtı.
+      # `-f` yok: curl burada sadece gerçek bir bağlantı hatasında başarısız
+      # olur, beklenen bu 406'da değil.
       test: ["CMD-SHELL", "curl -sS -o /dev/null http://localhost:8765/mcp"]
       interval: 30s
       timeout: 5s
@@ -61,9 +62,10 @@ services:
 
   redis:
     image: redis:7-alpine
-    # Conversation memory only — nothing here is worth surviving a crash
-    # (RedisMemory/InMemoryMemory both degrade gracefully on a miss, see
-    # ADR-008), so no persistence volume: an ephemeral cache, not a database.
+    # Sadece konuşma hafızası — burada bir çökmeye dayanmaya değer hiçbir şey
+    # yok (RedisMemory/InMemoryMemory ikisi de bir miss'te zarifçe düşüyor,
+    # bkz. ADR-008), o yüzden kalıcılık volume'ü yok: geçici bir önbellek, bir
+    # veritabanı değil.
     restart: unless-stopped
 
   postgres:
@@ -74,9 +76,9 @@ services:
       - POSTGRES_DB=demobank
     volumes:
       - pgdata:/var/lib/postgresql/data
-      # Official postgres image auto-runs every .sql file here, but only
-      # against a brand-new (empty) data directory — see db/schema.sql's
-      # header for why every statement is idempotent regardless.
+      # Resmi postgres imajı buradaki her .sql dosyasını otomatik çalıştırıyor,
+      # ama sadece tertemiz (boş) bir veri dizinine karşı — yine de her
+      # ifadenin neden idempotent olduğu için bkz. db/schema.sql'in başlığı.
       - ../db/schema.sql:/docker-entrypoint-initdb.d/init.sql:ro
     restart: unless-stopped
     healthcheck:

@@ -1,8 +1,8 @@
-"""One true end-to-end test: seed the (fake-embedding) vector store, then ask
-a policy question through the real HTTP app and confirm a citation actually
-comes back. Everything else is covered at the unit/integration layer; this is
-the "does the whole thing actually work together" smoke test the playbook asks
-for (ENGINEERING-STANDARDS-WEB.md §5: at least one e2e happy path)."""
+"""Tek gerçek uçtan-uca test: (fake-embedding) vektör deposunu seed'le, gerçek
+HTTP uygulaması üzerinden bir politika sorusu sor ve gerçekten bir alıntı
+döndüğünü doğrula. Geri kalan her şey birim/entegrasyon katmanında kapsanıyor;
+bu "her şey gerçekten birlikte çalışıyor mu" duman testi — en az bir e2e
+happy-path senaryosu."""
 
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ async def test_policy_question_returns_a_grounded_citation(seeded_client: AsyncC
     body = response.json()
 
     assert body["intent"] == "RAG_QUERY"
-    assert len(body["citations"]) > 0, "seeded KB should produce at least one citation"
+    assert len(body["citations"]) > 0, "seed'lenmiş bilgi tabanı en az bir alıntı üretmeli"
     assert body["answer"]
     assert body["guardrail_flags"] == [] or "PII_REDACTED" in body["guardrail_flags"]
 

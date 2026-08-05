@@ -21,8 +21,8 @@ export async function sendChatMessage(request: ChatRequest): Promise<ChatRespons
   });
 
   if (!response.ok) {
-    // The backend always returns this shape for errors (see
-    // app/main.py's exception handlers) — 422/429/500 all match ErrorResponse.
+    // Backend hatalar için her zaman bu şekli döner (bkz. app/main.py'nin
+    // exception handler'ları) — 422/429/500 hepsi ErrorResponse ile eşleşiyor.
     const body = (await response.json().catch(() => null)) as ApiErrorResponse | null;
     throw new ApiError(
       body?.message ?? "Beklenmeyen bir hata oluştu.",

@@ -1,4 +1,4 @@
-"""Unit tests for nlp/intent_classifier.py — rule-based path only, no network/LLM."""
+"""nlp/intent_classifier.py için birim testler — sadece kural tabanlı yol, ağ/LLM yok."""
 
 from __future__ import annotations
 

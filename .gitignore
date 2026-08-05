@@ -25,3 +25,6 @@ data/vectorstore-test/
 # editor/IDE
 .idea/
 .vscode/
+
+# lokalde kalsın, repoda olmasın
+docs/deployment.md

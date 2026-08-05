@@ -1,9 +1,9 @@
-"""Shared rate limiter instance.
+"""Paylaşılan rate limiter örneği.
 
-Split into its own module (rather than living in main.py) so route modules
-(e.g. `app/api/routes/chat.py`) can import `limiter` to decorate their
-endpoints without importing `main` itself — `main.py` imports the routers,
-so a route importing back from `main` would be a circular import.
+main.py'de yaşamak yerine kendi modülünde duruyor ki route modülleri (ör.
+`app/api/routes/chat.py`) `main`'i import etmeden `limiter`'ı endpoint'lerini
+dekore etmek için import edebilsin — `main.py` router'ları import ediyor,
+yani bir route'un `main`'den geri import etmesi döngüsel bir import olurdu.
 """
 
 from __future__ import annotations

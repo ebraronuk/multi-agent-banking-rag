@@ -1,9 +1,9 @@
-"""Hybrid (vector + BM25) retriever used by the RAG worker node.
+"""RAG worker düğümünün kullandığı hibrit (vektör + BM25) retriever.
 
-Kept as a thin class over `Chroma` + `rerank_with_bm25` rather than folding
-retrieval logic into the agent node itself, so it can be constructed once per
-process (one Chroma connection, one embedding backend) and unit-tested
-without spinning up LangGraph.
+Retrieval mantığını ajan düğümüne gömmek yerine `Chroma` + `rerank_with_bm25`
+üzerine ince bir sınıf olarak tutuluyor — süreç başına bir kere kurulabilsin
+(tek bir Chroma bağlantısı, tek bir embedding backend'i) ve LangGraph
+kurmadan birim test edilebilsin diye.
 """
 
 from __future__ import annotations

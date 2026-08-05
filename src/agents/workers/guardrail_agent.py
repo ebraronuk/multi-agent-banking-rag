@@ -1,10 +1,9 @@
-"""Final safety pass before a response leaves the graph.
+"""Bir yanıt grafikten çıkmadan önceki son güvenlik geçişi.
 
-Runs on every path (RAG, tool, small talk, escalate) — it is the one node no
-turn can skip, which is what makes it a guardrail rather than just "the last
-step". Pure, synchronous, and LLM-free on purpose: policy enforcement should
-not itself depend on a model that can be jailbroken by the same input it's
-supposed to be checking.
+Her yolda çalışır (RAG, araç, sohbet, aktarım) — hiçbir turn'ün atlayamadığı
+tek düğüm bu, onu "sadece son adım" değil bir guardrail yapan da bu. Bilinçli
+olarak saf, senkron ve LLM'siz: politika uygulaması, kontrol etmesi gereken
+aynı girdiyle jailbreak edilebilecek bir modele bağımlı olmamalı.
 """
 
 from __future__ import annotations
@@ -24,9 +23,9 @@ from schemas.dto import AgentTraceStep, GuardrailFlag
 
 logger = get_logger(__name__)
 
-# TR IBAN: TR + 2 check digits + 5 bank code + 1 reserve + 16 account = 26 chars total.
+# TR IBAN: TR + 2 kontrol hanesi + 5 banka kodu + 1 rezerv + 16 hesap = 26 karakter.
 _IBAN_RE = re.compile(r"\bTR\d{2}(?:[ ]?\d{4}){5}[ ]?\d{2}\b", re.IGNORECASE)
-# Any other long digit run (PAN, phone-like) that isn't an IBAN gets the same treatment.
+# IBAN olmayan başka her uzun rakam dizisi (kart no, telefon benzeri) de aynı muameleyi görür.
 _LONG_DIGIT_RUN_RE = re.compile(r"\b\d{6,}\b")
 
 _ADVICE_KEYWORDS = (

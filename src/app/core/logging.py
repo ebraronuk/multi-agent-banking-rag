@@ -1,9 +1,9 @@
-"""Structured (JSON-capable) logging, configured once at process start.
+"""Süreç başında bir kere yapılandırılan, yapısal (JSON'a çevrilebilir) loglama.
 
-Every module gets its logger via `get_logger(__name__)` — never
-`print()`/bare `logging.getLogger`. `bind_request_context` attaches a
-request/conversation id to every log line emitted while it's active, so a
-single conversation's logs can be grepped out of a shared prod log stream.
+Her modül kendi logger'ını `get_logger(__name__)` ile alır — asla `print()`
+ya da çıplak `logging.getLogger` değil. `bind_request_context`, aktif olduğu
+sürece üretilen her log satırına bir istek/konuşma id'si ekliyor, ki tek bir
+konuşmanın logları paylaşılan bir prod log akışından grep'lenebilsin.
 """
 
 from __future__ import annotations

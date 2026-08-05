@@ -1,9 +1,4 @@
-"""System prompt for LLM-based intent classification (agents/workers/intent_agent.py).
-
-Kept in its own module — same convention as guardrail_prompt.py and
-smalltalk_prompt.py — so the prompt text can be reviewed and iterated on
-without touching the classification/parsing code that calls it.
-"""
+"""LLM tabanlı niyet sınıflandırması için sistem promptu (agents/workers/intent_agent.py)."""
 
 INTENT_SYSTEM_PROMPT = """Sen DemoBank A.Ş. için bir bankacılık asistanının niyet (intent) sınıflandırma \
 bileşenisin. Kullanıcının son mesajını aşağıdaki yedi etiketten TAM OLARAK BİRİNE ata:

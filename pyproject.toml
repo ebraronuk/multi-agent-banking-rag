@@ -1,7 +1,7 @@
 [project]
 name = "multi-agent-banking-rag"
 version = "0.1.0"
-description = "Reference implementation of a multi-agent, tool-using RAG assistant for a retail-banking support domain (LangGraph + FastMCP + FastAPI)."
+description = "Retail-banking destek alanı için çoklu-ajan, araç kullanan bir RAG asistanının referans uygulaması (LangGraph + FastMCP + FastAPI)."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }

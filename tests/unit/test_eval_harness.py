@@ -16,9 +16,9 @@ def test_rule_based_intent_classifier_clears_a_minimum_bar_on_the_eval_set() -> 
 
 
 def test_retrieval_finds_the_right_source_doc_at_rank_one() -> None:
-    # A dedicated temp collection, not `data/vectorstore-test` — this test
-    # seeds its own knowledge base and shouldn't depend on (or pollute)
-    # whatever another test run left behind in the shared one.
+    # `data/vectorstore-test` değil, özel bir geçici koleksiyon — bu test
+    # kendi bilgi tabanını seed'liyor ve paylaşılan koleksiyonda başka bir
+    # test çalışmasının bıraktığı şeye bağımlı olmamalı (onu da kirletmemeli).
     with tempfile.TemporaryDirectory() as tmp_dir:
         settings = Settings(chroma_persist_dir=tmp_dir, chroma_collection="eval-harness-test")
         vectorstore = build_vectorstore(settings)
@@ -26,12 +26,12 @@ def test_retrieval_finds_the_right_source_doc_at_rank_one() -> None:
 
         result = run_retrieval_eval(build_retriever(settings))
 
-    # Measured, not assumed: with FakeHashEmbeddings (no semantics) + BM25
-    # tokenization that doesn't stem Turkish morphology (bloklamak/bloke/
-    # blokla are three unrelated tokens to a plain `.lower().split()`), fake
-    # mode's real precision@1 on this set is ~0.5 — this bar is that
-    # measurement, not a bar picked to make the test pass. It exists to catch
-    # a *regression* below today's known baseline, not to claim retrieval is
-    # great offline; ADR-003/ADR-004 already say a real embedding model is
-    # what production-quality retrieval needs.
+    # Varsayılmadı, ölçüldü: FakeHashEmbeddings (anlam yok) + Türkçe morfolojiyi
+    # kök indirgemeden BM25 tokenization'ıyla (bloklamak/bloke/blokla, düz bir
+    # `.lower().split()`'a göre üç alakasız token), fake modun bu sette gerçek
+    # precision@1'i ~0.5 — bu sınır o ölçüm, testi geçirmek için seçilmiş bir
+    # sınır değil. Bugünkü bilinen taban çizgisinin altına bir *regresyonu*
+    # yakalamak için var, offline retrieval'ın harika olduğunu iddia etmek
+    # için değil; ADR-003/ADR-004 zaten production-kalitesinde retrieval için
+    # gerçek bir embedding modeli gerektiğini söylüyor.
     assert result.accuracy >= 0.5, f"misses: {result.misses}"

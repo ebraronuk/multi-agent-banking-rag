@@ -1,9 +1,9 @@
-"""Handles IntentLabel.RAG_QUERY — policy/FAQ questions answerable from the KB.
+"""IntentLabel.RAG_QUERY'i işler — bilgi tabanından yanıtlanabilecek politika/SSS soruları.
 
-Retrieval and generation are kept in one node (rather than split into two
-graph steps) because they're always sequential and never independently
-retried here; splitting them would only add a state-passing seam for no
-branching benefit.
+Retrieval ve üretim iki ayrı grafik adımına değil tek bir düğümde tutuluyor —
+her zaman sıralı çalışıyorlar ve burada ayrı ayrı yeniden denenmiyorlar;
+ayırmak dallanma açısından bir kazanç sağlamadan sadece bir state-aktarım
+noktası eklerdi.
 """
 
 from __future__ import annotations

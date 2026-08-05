@@ -6,7 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# System deps for chromadb (sqlite) build chain
+# chromadb'nin (sqlite) build zinciri için sistem bağımlılıkları
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential curl \
     && rm -rf /var/lib/apt/lists/*
@@ -18,11 +18,11 @@ RUN pip install .
 
 COPY data/sample_docs ./data/sample_docs
 
-# Non-root runtime user. The vectorstore directory is created and chowned here
-# (not left for the volume mount to sort out) because Docker initializes a
-# fresh named volume from whatever already exists at the mount point in the
-# image — without this, the volume comes up root-owned and Chroma can't open
-# its sqlite file as `appuser`.
+# Root olmayan bir runtime kullanıcısı. vectorstore dizini burada oluşturulup
+# chown ediliyor (volume mount'un halletmesine bırakılmıyor) çünkü Docker
+# taze bir named volume'ü, imajdaki mount noktasında zaten var olan şeyden
+# başlatıyor — bu olmasaydı volume root-owned gelirdi ve Chroma sqlite
+# dosyasını `appuser` olarak açamazdı.
 RUN useradd --create-home --uid 1000 appuser \
     && mkdir -p /data/vectorstore \
     && chown -R appuser:appuser /app /data/vectorstore
@@ -30,12 +30,11 @@ USER appuser
 
 EXPOSE 8000
 
-# No HEALTHCHECK here on purpose: this one image backs two different services
-# (api on :8000, mcp on :8765 via a command override in docker-compose.yml) —
-# a single baked-in check can't be correct for both. Each service defines its
-# own `healthcheck:` in docker-compose.yml instead; a check pinned to :8000
-# here would silently report the mcp container unhealthy forever (it did,
-# until this was caught by actually reading `docker inspect` output instead
-# of assuming the default HEALTHCHECK made sense for every command override).
+# Burada bilinçli olarak HEALTHCHECK yok: bu tek imaj iki farklı servisin
+# arkasında duruyor (api :8000'de, mcp docker-compose.yml'deki bir command
+# override ile :8765'te) — tek, gömülü bir kontrol ikisi için de doğru
+# olamaz. Her servis kendi `healthcheck:`ini docker-compose.yml'de tanımlıyor;
+# buraya :8000'e sabitlenmiş bir kontrol koymak mcp konteynerini sonsuza dek
+# sessizce unhealthy gösterirdi.
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--app-dir", "src"]

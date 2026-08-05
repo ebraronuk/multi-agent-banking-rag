@@ -1,8 +1,8 @@
-"""Unit tests for sample-document ingestion/chunking.
+"""Örnek doküman ingestion/chunking'i için birim testler.
 
-Uses a temp directory of small markdown fixtures rather than the real
-`data/sample_docs` corpus, so the test doesn't depend on (or break when
-someone edits) the actual knowledge-base content.
+Gerçek `data/sample_docs` korpusu yerine küçük markdown fixture'larının
+bulunduğu geçici bir dizin kullanıyor, ki test gerçek bilgi tabanı içeriğine
+bağımlı olmasın (biri onu düzenlediğinde bozulmasın).
 """
 
 from __future__ import annotations

@@ -1,8 +1,9 @@
-"""Chroma vector store factory.
+"""Chroma vektör deposu factory'si.
 
-A single function rather than a wrapping class: `Chroma` already carries all
-the state a caller needs (persistence dir, collection, embedding function),
-so a class here would only add indirection over the library's own API.
+Sarmalayan bir sınıf yerine tek bir fonksiyon: `Chroma` zaten bir çağıranın
+ihtiyaç duyduğu tüm durumu (kalıcılık dizini, koleksiyon, embedding
+fonksiyonu) taşıyor, burada bir sınıf kütüphanenin kendi API'sinin üzerine
+sadece bir dolaylama katmanı eklerdi.
 """
 
 from __future__ import annotations
@@ -18,10 +19,10 @@ def build_vectorstore(settings: Settings) -> Chroma:
         collection_name=settings.chroma_collection,
         embedding_function=get_embeddings(settings),
         persist_directory=settings.chroma_persist_dir,
-        # Chroma defaults new collections to squared-L2 distance, whose
-        # "relevance score" isn't bounded to [0, 1] (negative values are
-        # possible) — cosine space is what `similarity_search_with_relevance_scores`
-        # assumes, and matches the L2-normalized vectors `FakeHashEmbeddings`
-        # produces.
+        # Chroma yeni koleksiyonlarda varsayılan olarak squared-L2 mesafesi
+        # kullanıyor, onun "relevance score"u [0, 1] aralığına sınırlı değil
+        # (negatif değerler mümkün) — `similarity_search_with_relevance_scores`
+        # cosine uzayını varsayıyor, `FakeHashEmbeddings`'in ürettiği
+        # L2-normalize vektörlerle de örtüşen bu.
         collection_metadata={"hnsw:space": "cosine"},
     )

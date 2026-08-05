@@ -1,11 +1,12 @@
-"""Tiny, honest evaluation harness — not RAGAS, not a benchmark suite.
+"""Küçük, dürüst bir değerlendirme aracı — RAGAS değil, bir benchmark paketi değil.
 
-Exists to make one point concretely: a multi-agent system's quality claims
-should be backed by *some* repeatable measurement, even a small hand-labeled
-one, rather than "it seemed to work when I tried it a few times". Swap
-`INTENT_EVAL_SET` for a real labeled dataset (ideally sourced from actual
-support transcripts) and this becomes a real regression gate that CI can run
-on every PR; today it's a worked example of the shape that gate should take.
+Tek bir noktayı somut olarak göstermek için var: çoklu-ajan bir sistemin
+kalite iddiaları, "birkaç kere denedim, çalışıyor gibiydi" yerine *bir*
+tekrarlanabilir ölçümle desteklenmeli, küçük ve elle etiketlenmiş olsa bile.
+`INTENT_EVAL_SET`'i gerçek bir etiketli veri setiyle (ideal olarak gerçek
+destek transkriptlerinden) değiştirmek, bunu CI'ın her PR'da çalıştırabileceği
+gerçek bir regresyon kapısına dönüştürür; bugün bu kapının nasıl bir şekil
+alması gerektiğinin somut bir örneği.
 """
 
 from __future__ import annotations
@@ -63,9 +64,9 @@ def run_intent_eval(cases: tuple[IntentEvalCase, ...] = INTENT_EVAL_SET) -> Inte
 @dataclass(frozen=True)
 class RetrievalEvalCase:
     query: str
-    # Substring expected in the top citation's `source` filename — not an
-    # exact match, since chunk filenames carry a `-<index>` suffix
-    # (see rag/ingest.py) that would make this brittle for no benefit.
+    # En üstteki alıntının `source` dosya adında beklenen alt-dize — birebir
+    # eşleşme değil, çünkü chunk dosya adları bir `-<index>` soneki taşıyor
+    # (bkz. rag/ingest.py) ve bu, hiçbir kazanç olmadan kırılganlık eklerdi.
     expected_source: str
 
 
@@ -93,14 +94,14 @@ class RetrievalEvalResult:
 def run_retrieval_eval(
     retriever: HybridRetriever, cases: tuple[RetrievalEvalCase, ...] = RETRIEVAL_EVAL_SET
 ) -> RetrievalEvalResult:
-    """Does the top citation for each query actually come from the doc that answers it?
+    """Her sorgu için en üstteki alıntı, gerçekten onu yanıtlayan dokümandan mı geliyor?
 
-    This is retrieval precision@1, not answer-quality — it doesn't touch the
-    LLM at all, deliberately: a wrong citation is a retriever bug, a bad
-    phrasing of a right citation is a prompt/model concern, and conflating
-    the two in one metric makes both harder to debug. RAG answer quality
-    itself would need a judged/labeled dataset this project doesn't have;
-    swap-in point is the same shape as `run_intent_eval`.
+    Bu retrieval precision@1, cevap kalitesi değil — bilinçli olarak LLM'e hiç
+    dokunmuyor: yanlış bir alıntı bir retriever hatası, doğru bir alıntının
+    kötü ifade edilmesi bir prompt/model meselesi — ikisini tek bir metrikte
+    karıştırmak ikisini de debug etmeyi zorlaştırırdı. RAG cevap kalitesinin
+    kendisi bu projenin sahip olmadığı, hakemli/etiketlenmiş bir veri seti
+    gerektirirdi; yerine koyma noktası `run_intent_eval` ile aynı şekilde.
     """
     correct = 0
     misses: list[tuple[str, str, str]] = []
@@ -127,10 +128,10 @@ if __name__ == "__main__":
     for text, expected, predicted in intent_result.misses:
         print(f"  MISS: {text!r} expected={expected} got={predicted}")
 
-    # A throwaway collection in a temp dir, not the app's real
-    # `data/vectorstore` — `add_documents` has no dedup-by-content, so
-    # re-running this against the live collection would silently pile up
-    # duplicate chunks on every invocation instead of giving a clean number.
+    # Geçici bir dizinde tek kullanımlık bir koleksiyon, uygulamanın gerçek
+    # `data/vectorstore`'u değil — `add_documents`'ın içerik-bazlı bir dedup'ı
+    # yok, yani bunu canlı koleksiyona karşı tekrar çalıştırmak temiz bir sayı
+    # vermek yerine her çağrıda sessizce tekrarlanan chunk'lar biriktirirdi.
     with tempfile.TemporaryDirectory() as tmp_dir:
         eval_settings = get_settings().model_copy(
             update={"chroma_persist_dir": tmp_dir, "chroma_collection": "eval-harness-cli"}

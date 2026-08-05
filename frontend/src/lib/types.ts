@@ -1,7 +1,8 @@
-// Mirrors src/schemas/dto.py exactly — this is the one place the frontend's
-// idea of the API contract lives. If the backend's DTOs change, this is what
-// needs updating (no shared codegen here on purpose: a small, hand-written
-// frontend doesn't need an OpenAPI client generation step to stay honest).
+// src/schemas/dto.py'yi birebir yansıtıyor — frontend'in API sözleşmesi
+// hakkındaki fikrinin yaşadığı tek yer burası. Backend'in DTO'ları
+// değişirse güncellenmesi gereken yer burası (bilinçli olarak paylaşılan bir
+// codegen yok: küçük, elle yazılmış bir frontend'in dürüst kalmak için bir
+// OpenAPI client üretim adımına ihtiyacı yok).
 
 export type IntentLabel =
   | "RAG_QUERY"
@@ -85,5 +86,5 @@ export interface ApiErrorResponse {
 export interface ChatMessageEntry {
   role: "user" | "assistant";
   content: string;
-  response?: ChatResponse; // present for assistant entries — drives the trace panel
+  response?: ChatResponse; // asistan girdileri için var — trace panelini besliyor
 }

@@ -9,9 +9,10 @@ import { MessageBubble } from "./MessageBubble";
 import { TraceTimeline } from "./TraceTimeline";
 
 export function ChatPanel() {
-  // One id per browser tab session — not persisted, so refreshing the page
-  // intentionally starts a fresh conversation (matches the "demo, not a
-  // real account" framing; a real product would tie this to a logged-in user).
+  // Tarayıcı sekmesi oturumu başına bir id — kalıcı değil, sayfayı
+  // yenilemek bilinçli olarak yeni bir konuşma başlatıyor (bu bir demo,
+  // gerçek bir hesap değil; gerçek bir ürün bunu giriş yapmış bir
+  // kullanıcıya bağlardı).
   const [conversationId] = useState<string>(() => crypto.randomUUID());
   const [messages, setMessages] = useState<ChatMessageEntry[]>([]);
   const [input, setInput] = useState("");

@@ -12,13 +12,13 @@ import {
   Wrench,
 } from "@phosphor-icons/react";
 
-// One config object driving the trace timeline's icon/label/color per node —
-// keeps agents/graph.py's node names as the single source of truth instead of
-// scattering `if (node === "rag_agent")` branches across components.
+// Trace timeline'ın düğüm başına ikon/etiket/renk'ini süren tek bir config
+// nesnesi — agents/graph.py'nin düğüm adlarını tek kaynak olarak tutuyor,
+// bileşenlere yayılmış `if (node === "rag_agent")` dallarını önlüyor.
 export interface NodeMeta {
   label: string;
   icon: Icon;
-  colorClass: string; // Tailwind text/bg color pair, applied together
+  colorClass: string; // Tailwind text/bg renk çifti, birlikte uygulanıyor
 }
 
 export const NODE_META: Record<string, NodeMeta> = {

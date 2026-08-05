@@ -1,14 +1,15 @@
-"""LangGraph node wrapping intent classification.
+"""Niyet sınıflandırmasını saran LangGraph düğümü.
 
-Runs after `ner_agent` in the graph so classification can use entities
-already extracted (e.g. a `CARD_LAST4` hit corroborates `CARD_ACTION`) — see
-`nlp/intent_classifier.py` for the rule-based/LLM split and fallback logic.
+Grafikte `ner_agent`'tan sonra çalışır ki sınıflandırma zaten çıkarılmış
+varlıkları kullanabilsin (ör. bir CARD_LAST4 eşleşmesi CARD_ACTION'ı
+destekler) — kural tabanlı/LLM ayrımı ve fallback mantığı için bkz.
+`nlp/intent_classifier.py`.
 
-Also the consumer of `state["carried_pending_request"]` (see ADR-008): if the
-previous turn was waiting on a specific entity and `ner_agent` found exactly
-that entity this turn, the pending intent is reused directly instead of
-reclassifying a bare "1234" from scratch — the rule-based classifier has no
-keyword signal for that and would score it `OUT_OF_SCOPE`.
+Ayrıca `state["carried_pending_request"]`'in tüketicisi (bkz. ADR-008): önceki
+turn belirli bir varlığı bekliyorduysa ve `ner_agent` bu turn tam olarak o
+varlığı bulduysa, bekleyen niyet sıfırdan yeniden sınıflandırılmak yerine
+aynen kullanılıyor — kural tabanlı sınıflandırıcının çıplak bir "1234" için
+hiçbir anahtar kelime sinyali yok, bunu OUT_OF_SCOPE olarak puanlardı.
 """
 
 from __future__ import annotations

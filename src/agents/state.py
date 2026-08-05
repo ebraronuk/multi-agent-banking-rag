@@ -1,11 +1,10 @@
-"""Shared LangGraph state schema.
+"""Paylaşılan LangGraph state şeması.
 
-Every worker node (`agents/workers/*.py`) receives this full state and returns
-a partial update `dict`; LangGraph merges partial updates into the running
-state using the reducers declared below (`add_messages` for the chat
-transcript, `operator.add` for append-only trace/tool-call logs). Everything
-else is last-write-wins, which is intentional: `intent`/`entities`/
-`draft_answer` are each owned by exactly one node.
+Her worker düğümü bu state'in tamamını alır, kısmi bir güncelleme dict'i
+döner; LangGraph bunları aşağıdaki reducer'larla birleştirir (`add_messages`
+sohbet transcript'i için, `operator.add` append-only trace/tool-call logları
+için). Geri kalanı last-write-wins — `intent`/`entities`/`draft_answer`'ın
+her biri tam olarak bir düğüme ait olduğu için bu bilinçli bir tercih.
 """
 
 from __future__ import annotations
@@ -37,12 +36,11 @@ class GraphState(TypedDict, total=False):
     intent_confidence: float | None
     entities: list[Entity]
 
-    # Loaded by memory_agent (agents/workers/memory_agent.py) before ner_agent
-    # runs; read-only input for this turn. `carried_pending_request` is what
-    # the *previous* turn was waiting to hear back (see ADR-008) —
-    # `pending_entity_request` below is this turn's own outgoing value and is
-    # a completely separate field so a stale request can't linger past the
-    # turn that actually resolves (or abandons) it.
+    # memory_agent tarafından ner_agent'tan önce yüklenir, bu turn için salt
+    # okunur girdi. carried_pending_request önceki turn'ün beklediği şey
+    # (ADR-008); pending_entity_request bu turn'ün kendi çıkışı — bilinçli
+    # olarak ayrı iki alan, biri diğerine karışırsa eski bir istek turn'ü
+    # geçtikten sonra da sessizce askıda kalabilir.
     history: list[ChatMessage]
     carried_pending_request: PendingEntityRequest | None
     pending_entity_request: PendingEntityRequest | None
@@ -61,11 +59,11 @@ class GraphState(TypedDict, total=False):
 
 
 def new_state(conversation_id: str, user_query: str) -> GraphState:
-    """Seed a fresh GraphState for one turn of a conversation.
+    """Bir konuşmanın tek bir turn'ü için taze bir GraphState kurar.
 
-    "Fresh" per *turn*, not per conversation — `memory_agent` is what actually
-    carries continuity forward by loading `history`/`carried_pending_request`
-    from storage immediately after this runs.
+    "Taze" olan turn, konuşmanın kendisi değil — sürekliliği asıl taşıyan
+    memory_agent, bundan hemen sonra history/carried_pending_request'i
+    depodan yüklüyor.
     """
     return GraphState(
         conversation_id=conversation_id,

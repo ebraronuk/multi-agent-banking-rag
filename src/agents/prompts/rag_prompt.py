@@ -1,9 +1,7 @@
-"""System prompt for the RAG worker (`agents/workers/rag_agent.py`).
+"""RAG ajanının sistem promptu (`agents/workers/rag_agent.py`).
 
-Written in Turkish since the target audience (a Turkish fintech) and the
-knowledge base itself are Turkish; the prompt still asks the model to mirror
-whichever language the user actually wrote in, so an English question gets an
-English answer.
+Prompt Türkçe yazıldı çünkü hedef kitle ve bilgi tabanı Türkçe; yine de
+kullanıcının yazdığı dile uyum göster diye ayrıca isteniyor.
 """
 
 from __future__ import annotations

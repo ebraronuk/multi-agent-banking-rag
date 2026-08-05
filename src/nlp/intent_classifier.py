@@ -1,13 +1,13 @@
-"""Rule-based and LLM-backed intent classification.
+"""Kural tabanlı ve LLM destekli niyet sınıflandırması.
 
-The rule-based path is always available (offline, deterministic, no network)
-and is what `classify_intent` falls back to whenever the LLM path can't be
-trusted: the process is running on `FakeChatModel` (a hash digest has no
-notion of "which intent applies here", so prompting it would be theater), or
-the real LLM call fails or returns something that doesn't parse. An intent
-classifier that raises because a provider returned malformed structured
-output would take down the whole conversational turn — that's a real
-production bug class, guarded against explicitly rather than left implicit.
+Kural tabanlı yol her zaman kullanılabilir (offline, deterministik, ağsız) ve
+`classify_intent`'in LLM yoluna güvenilemediği her durumda düştüğü yer: süreç
+`FakeChatModel` üzerinde çalışıyor (bir hash digest'inin "burada hangi niyet
+geçerli" diye bir fikri yok, ona prompt yazmak tiyatro olurdu), ya da gerçek
+LLM çağrısı başarısız oluyor ya da parse edilemeyen bir şey döndürüyor. Bir
+sağlayıcının bozuk bir structured output döndürmesi yüzünden raise eden bir
+niyet sınıflandırıcısı tüm konuşma turn'ünü düşürürdü — bu gerçek bir
+production hata sınıfı, örtük bırakılmak yerine açıkça korunuyor.
 """
 
 from __future__ import annotations
@@ -23,12 +23,13 @@ from schemas.dto import Entity, EntityType, IntentLabel
 
 logger = get_logger(__name__)
 
-# Dict order doubles as the tie-break rule: `classify_intent_rule_based`'s
-# `max()` keeps the first-seen top score, so RAG_QUERY (listed first) wins any
-# tie against an action intent. This matters concretely for "EFT limitiniz ne
-# kadar?" — it matches both "limit" (RAG_QUERY) and "eft" (TRANSACTION_ACTION);
-# defaulting an ambiguous message to "explain" rather than "act" is the safer
-# failure mode for a banking assistant (nothing gets moved/blocked on a guess).
+# Dict sırası aynı zamanda berabere-bozma kuralı: `classify_intent_rule_based`'in
+# `max()`'i ilk-görülen en yüksek skoru koruyor, yani RAG_QUERY (ilk listelenen)
+# bir action intent'e karşı her berabereliği kazanıyor. Bu "EFT limitiniz ne
+# kadar?" için somut olarak önemli — hem "limit" (RAG_QUERY) hem "eft"
+# (TRANSACTION_ACTION) ile eşleşiyor; belirsiz bir mesajı "işlem yap" yerine
+# "açıkla"ya varsaymak bir bankacılık asistanı için daha güvenli bir hata modu
+# (bir tahmin üzerine hiçbir şey taşınmıyor/bloklanmıyor).
 _INTENT_KEYWORDS: dict[IntentLabel, tuple[str, ...]] = {
     IntentLabel.RAG_QUERY: (
         "nasıl açılır",
@@ -103,13 +104,14 @@ _INTENT_KEYWORDS: dict[IntentLabel, tuple[str, ...]] = {
         "representative",
         "human agent",
     ),
-    # IntentLabel.OUT_OF_SCOPE deliberately has no keyword list — it's the
-    # fallback when every other intent scores zero, not something to match for.
+    # IntentLabel.OUT_OF_SCOPE bilinçli olarak bir anahtar kelime listesine
+    # sahip değil — diğer her intent sıfır puan aldığında düşülen fallback,
+    # eşleşmeye çalışılacak bir şey değil.
 }
 
-# A corroborating entity type is a modest, additive signal on top of keyword
-# evidence — not a substitute for it — so it adds one flat point rather than
-# a multiplier or a dominant term.
+# Destekleyici bir entity tipi, anahtar kelime kanıtının üzerine mütevazı,
+# katkı sağlayan bir sinyal — onun yerine geçmiyor — bu yüzden bir çarpan ya
+# da baskın bir terim değil, sadece bir düz puan ekliyor.
 _ENTITY_BOOSTS: dict[IntentLabel, tuple[EntityType, ...]] = {
     IntentLabel.CARD_ACTION: (EntityType.CARD_LAST4,),
     IntentLabel.ACCOUNT_ACTION: (EntityType.IBAN, EntityType.ACCOUNT_TYPE),
@@ -124,7 +126,7 @@ _OUT_OF_SCOPE_CONFIDENCE = 0.3
 
 
 class _IntentClassification(BaseModel):
-    """Internal parsing target for `llm.with_structured_output` — not a public DTO."""
+    """`llm.with_structured_output` için dahili parse hedefi — genel bir DTO değil."""
 
     intent: IntentLabel
     confidence: float = Field(ge=0.0, le=1.0)
@@ -155,8 +157,8 @@ async def classify_intent(
     text: str, entities: list[Entity], llm: BaseChatModel
 ) -> tuple[IntentLabel, float]:
     if is_fake_model(llm):
-        # Prompting a hash-based fake model buys nothing — it can't honor a
-        # structured-output contract in any meaningful sense.
+        # Hash-tabanlı bir fake modele prompt yazmanın hiçbir kazancı yok —
+        # anlamlı hiçbir şekilde structured-output sözleşmesine uyamaz.
         return classify_intent_rule_based(text, entities)
 
     try:

@@ -258,6 +258,12 @@ autoscale), `configmap.yaml`. Bu demo'nun asıl çalıştırma yolu `docker comp
 (yukarıya bakın); k8s manifestleri gerçek bir clusterda nasıl dağıtılacağının
 somut bir örneği olarak duruyor, CI'da apply edilmiyor.
 
+## Gerçek bir dağıtım (Render + Neon + Vercel)
+
+Bu projeyi gerçek bir API anahtarıyla, gerçek bir Postgres'e karşı canlıya almak
+istersen adım adım rehber: [`docs/deployment.md`](docs/deployment.md). Kök
+dizindeki `render.yaml`, `api`/`mcp` servislerinin Render Blueprint tanımı.
+
 ## Lisans ve proje sağlığı
 
 MIT — bkz. [`LICENSE`](LICENSE). `.pre-commit-config.yaml` (ruff, `make hooks` ile

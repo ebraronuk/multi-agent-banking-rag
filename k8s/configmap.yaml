@@ -15,8 +15,8 @@ data:
   MAX_AGENT_ITERATIONS: "6"
   REQUEST_TIMEOUT_SECONDS: "30"
 ---
-# Placeholder only — real secrets are provisioned via the cluster's secret
-# manager (e.g. External Secrets Operator / sealed-secrets), never committed.
+# Sadece yer tutucu — gerçek sırlar cluster'ın sır yöneticisi üzerinden
+# sağlanır (ör. External Secrets Operator / sealed-secrets), asla commit edilmez.
 apiVersion: v1
 kind: Secret
 metadata:
@@ -26,9 +26,9 @@ stringData:
   ANTHROPIC_API_KEY: "changeme"
   OPENAI_API_KEY: "changeme"
   GOOGLE_API_KEY: "changeme"
-  # Connection strings, not just API keys — they embed credentials, so they
-  # belong in the Secret alongside the provider keys above, not the plain
-  # ConfigMap. Both fall back to an in-process, non-persistent implementation
-  # when unset (see agents/memory.py, mcp_server/tools/banking_repository.py).
+  # Sadece API anahtarı değil, bağlantı string'i — kimlik bilgisi içeriyorlar,
+  # o yüzden yukarıdaki sağlayıcı anahtarlarıyla birlikte Secret'ta duruyorlar,
+  # düz ConfigMap'te değil. İkisi de boşken in-process, kalıcı olmayan bir
+  # implementasyona düşüyor (bkz. agents/memory.py, mcp_server/tools/banking_repository.py).
   REDIS_URL: "changeme"
   DATABASE_URL: "changeme"

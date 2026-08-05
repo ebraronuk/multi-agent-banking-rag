@@ -1,9 +1,9 @@
-"""Force the whole test suite onto the offline/fake providers before Settings loads.
+"""Settings yüklenmeden önce tüm test paketini offline/fake sağlayıcılara zorlar.
 
-Without this, importing `app.core.config.get_settings()` in a test would pick up
-whatever's in a developer's real `.env` (e.g. LLM_PROVIDER=anthropic), making
-tests non-deterministic and dependent on network + API credits. Tests should
-never need a real key to pass.
+Bu olmadan, bir testte `app.core.config.get_settings()`'i import etmek
+geliştiricinin gerçek `.env`'inde ne varsa onu (ör. LLM_PROVIDER=anthropic)
+alırdı, testleri deterministik-olmayan ve ağ + API kredisine bağımlı yapardı.
+Testlerin geçmesi için asla gerçek bir anahtar gerekmemeli.
 """
 
 from __future__ import annotations
@@ -20,11 +20,11 @@ os.environ.setdefault("CHROMA_PERSIST_DIR", "./data/vectorstore-test")
 
 @pytest.fixture(autouse=True)
 def _reset_rate_limiter() -> None:
-    """`app.core.rate_limit.limiter` is a module-level singleton shared by
-    every test in this session — without resetting it, a test that
-    intentionally trips the /chat rate limit would leave later tests
-    (running in the same process, same in-memory counter) failing with 429s
-    that have nothing to do with what they're actually testing."""
+    """`app.core.rate_limit.limiter`, bu oturumdaki her test tarafından
+    paylaşılan modül-seviyesi bir singleton — sıfırlanmazsa, /chat rate
+    limitini bilinçli olarak tetikleyen bir test, aynı süreçte/aynı in-memory
+    sayaçla çalışan sonraki testleri, gerçekte test ettikleri şeyle hiç ilgisi
+    olmayan 429'larla başarısız bırakırdı."""
     from app.core.rate_limit import limiter
 
     limiter.reset()

@@ -1,4 +1,4 @@
-# ADR-001: LangGraph as the multi-agent orchestration layer
+# ADR-001: Çoklu-ajan orkestrasyon katmanı olarak LangGraph
 
 ## Bağlam
 Sistem, tek bir LLM çağrısıyla çözülemeyecek kadar farklı sorumlulukları (niyet/varlık

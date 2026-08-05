@@ -1,8 +1,8 @@
-"""Unit tests for the BM25 + vector-score hybrid reranker.
+"""BM25 + vektör-skoru hibrit reranker için birim testler.
 
-No network, no vector store — candidates are hand-built (Document, score)
-pairs, which is exactly the shape `HybridRetriever.retrieve` passes in after
-`similarity_search_with_relevance_scores`.
+Ağ yok, vektör deposu yok — adaylar elle kurulmuş (Document, score) çiftleri,
+tam olarak `HybridRetriever.retrieve`'in `similarity_search_with_relevance_scores`'tan
+sonra geçirdiği şekil.
 """
 
 from __future__ import annotations
@@ -35,12 +35,13 @@ def test_rerank_single_candidate_skips_bm25_and_uses_vector_score() -> None:
 def test_rerank_prefers_lexically_and_semantically_relevant_document() -> None:
     query = "kart engelleme nasıl yapılır"
 
-    # "target" is the only candidate whose tokens overlap the query at all, so
-    # it is the unique BM25-scoring document in this corpus (the other three
-    # share zero query terms and therefore tie at a BM25 score of 0). Vector
-    # scores are set so target does NOT have the best raw vector score either
-    # (decoy does) — only the BM25 contribution can make target win, which is
-    # exactly what this test is meant to prove about the 50/50 blend.
+    # "target", token'ları sorguyla en ufak örtüşen tek aday, yani bu
+    # korpusta BM25 skoru alan tek doküman (diğer üçü sorgu terimlerinin
+    # hiçbirini paylaşmıyor, bu yüzden 0 BM25 skorunda berabere kalıyor).
+    # Vektör skorları, target'ın ham vektör skorunun da en iyisi olmayacağı
+    # şekilde ayarlandı (o "decoy"da) — sadece BM25 katkısı target'ı
+    # kazandırabilir, bu testin %50/%50 harman hakkında kanıtlamak istediği
+    # de tam olarak bu.
     target = _doc(
         "target", "kart engelleme kart engelleme mobil uygulama üzerinden anında yapılabilir"
     )

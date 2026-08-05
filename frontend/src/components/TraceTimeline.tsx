@@ -6,9 +6,9 @@ interface TraceTimelineProps {
 }
 
 /**
- * The system's differentiating feature made visible: which agent ran, in
- * what order, doing what — the same `trace` field the API returns for every
- * turn (see docs/architecture.md), just rendered instead of read as JSON.
+ * Sistemin ayırt edici özelliğini görünür kılıyor: hangi ajan hangi sırayla
+ * çalıştı, ne yaptı — API'nin her turn için döndürdüğü `trace` alanının
+ * ta kendisi (bkz. docs/architecture.md), JSON olarak okumak yerine çizilmiş.
  */
 export function TraceTimeline({ trace }: TraceTimelineProps) {
   if (trace.length === 0) {

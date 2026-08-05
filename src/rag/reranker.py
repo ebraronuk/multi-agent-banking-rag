@@ -1,11 +1,12 @@
-"""Lexical (BM25) reranking blended with vector similarity.
+"""Vektör benzerliğiyle harmanlanmış sözcüksel (BM25) yeniden sıralama.
 
-Vector similarity alone misses exact-term matches — a customer asking about
-"FAST" or "KVKK" benefits from a lexical signal that rewards literal token
-overlap, which embeddings (especially the fake hash embedding used offline)
-can under-weight. Blending 50/50 rather than picking one covers both semantic
-and lexical matches without the cost/latency of a cross-encoder, which this
-demo's scale doesn't justify.
+Sadece vektör benzerliği tam terim eşleşmelerini kaçırıyor — "FAST" ya da
+"KVKK" hakkında soran bir müşteri, birebir token örtüşmesini ödüllendiren
+sözcüksel bir sinyalden faydalanıyor; embedding'ler (özellikle offline'da
+kullanılan fake hash embedding) bunu az ağırlıklandırabiliyor. Birini seçmek
+yerine %50/%50 harmanlamak, bu demo'nun ölçeğinin gerektirmediği bir
+cross-encoder'ın maliyeti/gecikmesi olmadan hem anlamsal hem sözcüksel
+eşleşmeleri kapsıyor.
 """
 
 from __future__ import annotations
@@ -46,10 +47,9 @@ def rerank_with_bm25(
     if not candidates:
         return []
 
-    # BM25 needs at least two documents to produce a meaningful corpus
-    # statistic (IDF is undefined/degenerate over a single document); with
-    # 0-1 candidates there is nothing to rerank against, so fall back to the
-    # vector score as-is.
+    # BM25'in anlamlı bir korpus istatistiği üretebilmesi için en az iki
+    # doküman gerekiyor (IDF, tek bir doküman üzerinde tanımsız/dejenere); 0-1
+    # adayla yeniden sıralanacak bir şey yok, o yüzden vektör skoruna aynen düş.
     if len(candidates) == 1:
         document, vector_score = candidates[0]
         return [_to_citation(document, vector_score)]

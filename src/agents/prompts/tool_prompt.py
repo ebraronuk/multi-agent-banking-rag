@@ -1,9 +1,4 @@
-"""System prompt used by `tool_agent` to turn a raw tool outcome into a reply.
-
-Kept separate from `agents/workers/tool_agent.py` so the wording can be tuned
-or localized without touching the node's control flow, mirroring
-`smalltalk_prompt.py` / `guardrail_prompt.py`.
-"""
+"""tool_agent'ın ham bir araç sonucunu kullanıcıya dönük bir cevaba çevirirken kullandığı promptlar."""
 
 from __future__ import annotations
 

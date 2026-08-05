@@ -1,13 +1,13 @@
-"""Short-term conversation memory: per-`conversation_id` turn history + the
-"what were we waiting to hear back" slot-fill state.
+"""Kısa süreli konuşma hafızası: her `conversation_id` için turn geçmişi +
+"ne cevap bekliyorduk" slot-doldurma durumu.
 
-Two backends behind the same duck-typed interface (`async load`/`async
-save_turn`), same fail-open pattern as `app/core/llm.py`/`rag/embeddings.py`:
-`RedisMemory` when `REDIS_URL` is configured (shared across replicas, survives
-restarts — the real answer for a multi-instance deployment), `InMemoryMemory`
-otherwise (single-process dict, fine for local dev/tests/CI, gone on restart).
-Neither ever lets a storage failure crash a chat turn: a Redis blip degrades
-to "no memory this turn," not a 500 (see ADR-008).
+Aynı duck-typed arayüzün (`async load`/`async save_turn`) arkasında iki
+backend — `app/core/llm.py`/`rag/embeddings.py` ile aynı fail-open desen:
+`REDIS_URL` set edilmişse `RedisMemory` (replikalar arası paylaşılır, restart'a
+dayanır), yoksa `InMemoryMemory` (tek process'lik dict, lokal/test/CI için
+sorun değil, restart'ta gider). İkisi de bir depolama hatasını turn'ü
+çökertmeye izin vermiyor — bir Redis aksaklığı "bu turn hafızasız" olarak
+zarifçe düşüyor, 500 olarak değil (bkz. ADR-008).
 """
 
 from __future__ import annotations
@@ -56,10 +56,10 @@ def _decode(raw: str) -> ConversationContext:
 
 
 class InMemoryMemory:
-    """Process-local dict — no persistence across restarts, no sharing across
-    replicas, but zero dependencies. This is what tests and `LLM_PROVIDER=fake`
-    local dev run on by default (see ADR-003's fail-open-offline philosophy,
-    applied here to memory instead of the LLM/embedding client)."""
+    """Process-local bir dict — restart'a dayanmaz, replikalar arası paylaşılmaz,
+    ama sıfır bağımlılık. Testlerin ve `LLM_PROVIDER=fake` lokal geliştirmenin
+    varsayılan olarak çalıştığı yer (ADR-003'ün fail-open-offline felsefesi,
+    burada LLM/embedding istemcisi yerine hafızaya uygulanmış)."""
 
     def __init__(self) -> None:
         self._store: dict[str, str] = {}
@@ -85,8 +85,8 @@ class InMemoryMemory:
 
 
 class RedisMemory:
-    """Real backend: shared across replicas, survives restarts, bounded by a
-    TTL (a conversation nobody returns to shouldn't live in Redis forever)."""
+    """Gerçek backend: replikalar arası paylaşılır, restart'a dayanır, bir TTL
+    ile sınırlı — kimsenin dönmediği bir konuşma Redis'te sonsuza dek yaşamamalı."""
 
     def __init__(self, redis_url: str, ttl_seconds: int) -> None:
         import redis.asyncio as redis
@@ -106,8 +106,8 @@ class RedisMemory:
             return ConversationContext()
         if not raw:
             return ConversationContext()
-        # decode_responses=True on the client makes this `str` at runtime;
-        # the stub's return type is still the pre-decode `bytes | str | None`.
+        # decode_responses=True runtime'da bunu zaten str yapıyor; tip
+        # tanımı hâlâ decode-öncesi bytes | str | None'ı gösteriyor.
         return _decode(raw if isinstance(raw, str) else raw.decode())
 
     async def save_turn(
@@ -128,17 +128,17 @@ class RedisMemory:
                 self._key(conversation_id), _encode(context), ex=self._ttl_seconds
             )
         except Exception:
-            # A lost write means the next turn starts without memory — a
-            # degraded conversation, not a failed one. Never let this
-            # exception surface past the memory_save node.
+            # Kaybolan bir yazma, bir sonraki turn'ün hafızasız başlaması
+            # demek — bozulmuş bir konuşma, başarısız bir işlem değil. Bu
+            # exception memory_save düğümünün ötesine hiç geçmemeli.
             logger.warning("conversation_memory_save_failed", conversation_id=conversation_id, exc_info=True)
 
 
 ConversationMemory = InMemoryMemory | RedisMemory
 
-# One process-wide InMemoryMemory instance when Redis isn't configured — a
-# fresh instance per request would defeat the entire point (each turn would
-# see an empty history).
+# Redis yapılandırılmamışsa süreç-genelinde tek bir InMemoryMemory örneği —
+# her istekte taze bir örnek kurmak amacı tamamen boşa çıkarır (her turn boş
+# bir geçmiş görürdü).
 _fallback_memory = InMemoryMemory()
 
 
@@ -153,10 +153,10 @@ def get_conversation_memory(settings: Settings) -> ConversationMemory:
 
 
 def history_to_messages(history: list[ChatMessage]) -> list[BaseMessage]:
-    """Shared by every LLM-calling worker (`rag_agent`/`smalltalk_agent`/
-    `tool_agent`) so a multi-turn follow-up ("ya EFT için mi?") reads as a
-    continuation instead of a context-free new question — one conversion,
-    not three slightly-different copies."""
+    """LLM çağıran her worker (rag_agent/smalltalk_agent/tool_agent) tarafından
+    paylaşılıyor ki çok-turlu bir takip sorusu ("ya EFT için mi?") bağlamsız
+    yeni bir soru değil, bir devam gibi okunsun — tek bir dönüştürme, üç ayrı
+    kopya değil."""
     return [
         HumanMessage(content=turn.content) if turn.role == "user" else AIMessage(content=turn.content)
         for turn in history
@@ -166,14 +166,14 @@ def history_to_messages(history: list[ChatMessage]) -> list[BaseMessage]:
 def synthesize_bare_answer_entity(
     text: str, pending: PendingEntityRequest
 ) -> tuple[IntentLabel, EntityType, str] | None:
-    """Is `text` a bare answer to what `pending` was asking for?
+    """`text`, `pending`'in beklediği şeye çıplak bir cevap mı?
 
-    A follow-up like "1234" has no "kart" keyword nearby for
-    `nlp/ner_extractor.py`'s regexes to anchor on — that's fine when read in
-    isolation, but wrong once we know the previous turn explicitly asked for
-    exactly this. Deliberately narrow (exact-length digit strings, IBAN
-    pattern) rather than "any short reply" — a wrong guess here would silently
-    execute the wrong banking action, which is worse than asking again.
+    "1234" gibi bir takip cevabının yakınında `nlp/ner_extractor.py`'nin
+    regex'lerinin anchor'lanacağı bir "kart" kelimesi yok — tek başına
+    okunduğunda bu sorun değil, ama önceki turn'ün tam olarak bunu beklediğini
+    bildiğimizde yanlış olur. Bilinçli olarak dar tutuldu (tam uzunlukta rakam
+    dizisi, IBAN kalıbı) — "kısa her cevap" gibi geniş bir tahmin, yanlış bir
+    bankacılık işlemini sessizce tetikleyebilirdi; bu, tekrar sormaktan beter.
     """
     stripped = text.strip()
 

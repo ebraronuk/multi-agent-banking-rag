@@ -1,21 +1,21 @@
-"""Handles IntentLabel.ACCOUNT_ACTION / TRANSACTION_ACTION / CARD_ACTION.
+"""IntentLabel.ACCOUNT_ACTION / TRANSACTION_ACTION / CARD_ACTION'ı işler.
 
-Two dispatch paths, chosen by whether a real LLM is configured (see
-`build_tool_agent_node`):
+İki yol var, `build_tool_agent_node` hangisini seçeceğine karar veriyor:
 
-- **Deterministic** (`_deterministic_tool_call`, used whenever `is_fake_model(llm)`
-  is True — offline/CI/no-key): a plain lookup table decides which single tool
-  to call. Precision (calling exactly the tool the intent implies, with
-  exactly the entity the user gave) matters more than letting a model
-  improvise which banking operation to run, and a hash-based fake model has
-  no notion of "which tool applies here" anyway (see ADR-002).
-- **LLM-planned** (`_reasoning_tool_call`, used with a real Anthropic/OpenAI
-  model): a genuine `bind_tools` ReAct-style loop, for requests the fixed map
-  can't resolve alone — "block my card AND open a support ticket about it"
-  needs two tools in one turn, which no single lookup-table entry expresses.
-  See ADR-009 for why this refines (not replaces) ADR-002's original stance,
-  and for the argument-grounding safety check every proposed tool call has to
-  pass before it's allowed to execute.
+- **Deterministik** (`_deterministic_tool_call`, `is_fake_model(llm)` True
+  olduğunda kullanılır — offline/CI/anahtarsız): sabit bir arama tablosu hangi
+  tek aracın çağrılacağına karar veriyor. Burada kesinlik (niyetin işaret
+  ettiği aracı, kullanıcının verdiği entity ile birebir çağırmak), bir modele
+  hangi bankacılık işlemini çalıştıracağını doğaçlatmaktan daha önemli — zaten
+  hash-tabanlı bir fake modelin "hangi araç burada geçerli" diye bir fikri yok
+  (bkz. ADR-002).
+- **LLM-planlı** (`_reasoning_tool_call`, gerçek bir Anthropic/OpenAI/Google
+  modeliyle kullanılır): sabit eşlemenin tek başına çözemediği istekler için
+  gerçek bir `bind_tools` ReAct-tarzı döngü — "kartımı blokla VE bir destek
+  talebi aç" tek turn'de iki araç istiyor, hiçbir tekil arama-tablosu satırı
+  bunu ifade edemez. Bu yolun ADR-002'nin duruşunu neden değiştirmediğini
+  (aksine geliştirdiğini) ve her önerilen araç çağrısının çalışmadan önce
+  geçmesi gereken argüman-doğrulama güvenlik kontrolünü ADR-009'da anlattım.
 """
 
 from __future__ import annotations
@@ -61,10 +61,10 @@ _UNGROUNDED_ARGUMENT_MESSAGE = (
     "kartınızın son 4 hanesini tekrar, açıkça paylaşır mısınız?"
 )
 
-# intent -> (required entity type, tool name, message to ask for the missing entity).
-# The supervisor only routes here for these three intents (see
-# `agents/supervisor.py::TOOL_DRIVEN_INTENTS`), so this doubles as the single
-# source of truth for "which tool answers which intent" in the deterministic path.
+# intent -> (gereken entity tipi, araç adı, eksik entity için sorulacak mesaj).
+# Supervisor buraya sadece bu üç intent için yönlendiriyor (bkz.
+# `agents/supervisor.py::TOOL_DRIVEN_INTENTS`), bu yüzden bu sözlük aynı zamanda
+# "hangi aracın hangi niyeti yanıtladığının" tek kaynağı — deterministik yol için.
 _INTENT_TOOL_MAP: dict[IntentLabel, tuple[EntityType, str, str]] = {
     IntentLabel.ACCOUNT_ACTION: (EntityType.IBAN, "get_balance", _MISSING_IBAN_MESSAGE),
     IntentLabel.TRANSACTION_ACTION: (EntityType.IBAN, "list_transactions", _MISSING_IBAN_MESSAGE),
@@ -83,7 +83,7 @@ def _build_arguments(tool_name: str, entity_value: str, user_query: str) -> dict
         return {"account_id": entity_value}
     if tool_name == "block_card":
         return {"card_last4": entity_value, "reason": user_query}
-    raise ValueError(f"unmapped tool: {tool_name}")  # unreachable given _INTENT_TOOL_MAP
+    raise ValueError(f"unmapped tool: {tool_name}")  # _INTENT_TOOL_MAP göz önüne alınca ulaşılamaz
 
 
 def _format_tool_outcome(record: ToolCallRecord) -> str:
@@ -101,8 +101,8 @@ async def _deterministic_tool_call(
     mapping = _INTENT_TOOL_MAP.get(intent) if intent is not None else None
 
     if mapping is None:
-        # Defensive only: the supervisor is not expected to route here for
-        # any other intent. Fail safe instead of crashing if it ever does.
+        # Sadece savunma amaçlı: supervisor'ın başka bir intent için buraya
+        # yönlendirmesi beklenmiyor. Çökmek yerine güvenli bir şekilde düş.
         logger.warning("tool_agent_unmapped_intent", intent=intent)
         return {
             "draft_answer": _UNSUPPORTED_INTENT_MESSAGE,
@@ -115,21 +115,21 @@ async def _deterministic_tool_call(
             ],
         }
 
-    # `mapping` only comes from a successful `_INTENT_TOOL_MAP.get(intent)`
-    # lookup above, which is only attempted when `intent is not None` — so
-    # this always holds; the assert narrows the type for mypy.
+    # `mapping` sadece yukarıdaki başarılı `_INTENT_TOOL_MAP.get(intent)`
+    # aramasından geliyor, o da yalnızca `intent is not None` iken deneniyor —
+    # yani bu her zaman geçerli; assert mypy için tipi daraltıyor.
     assert intent is not None
     entity_type, tool_name, missing_message = mapping
     entities = state.get("entities", [])
     entity = _find_entity(entities, entity_type)
 
     if entity is None:
-        # Don't call a tool with a guessed/empty value, and don't loop
-        # waiting for an entity the user didn't provide this turn —
-        # setting tool_agent_done=True ends the turn immediately.
-        # `pending_entity_request` is what lets *next* turn's bare "1234"
-        # complete this request instead of being reclassified from scratch
-        # (see memory_agent.py / ADR-008).
+        # Tahmin edilmiş/boş bir değerle bir aracı çağırma, ve kullanıcının bu
+        # turda vermediği bir entity'yi bekleyerek döngüye girme —
+        # `tool_agent_done=True` turn'ü hemen bitiriyor. `pending_entity_request`,
+        # bir sonraki turn'ün çıplak "1234"ünün sıfırdan yeniden
+        # sınıflandırılmak yerine bu isteği tamamlamasını sağlıyor (bkz.
+        # memory_agent.py / ADR-008).
         logger.info("tool_agent_missing_entity", intent=intent, entity_type=entity_type)
         return {
             "draft_answer": missing_message,
@@ -147,20 +147,20 @@ async def _deterministic_tool_call(
         }
 
     entity_value = entity.normalized or entity.value
-    # If this turn is completing a slot-fill ("4321" answering "which card?"),
-    # the *original* request ("kartımı blokla, çalındı") is what's actually
-    # worth recording as `reason` — the bare digits answer alone would be.
+    # Bu turn bir slot-doldurmayı tamamlıyorsa ("4321", "hangi kart?"a cevap
+    # veriyorsa), asıl kaydedilmeye değer olan `reason` orijinal istek
+    # ("kartımı blokla, çalındı") — çıplak rakam cevabının kendisi değil.
     carried = state.get("carried_pending_request")
     reason_source = carried.original_message if carried else state["user_query"]
     arguments = _build_arguments(tool_name, entity_value, reason_source)
 
     record = await tool_client.call_tool(tool_name, arguments)
 
-    # If the summarizing LLM call itself fails (provider outage, timeout),
-    # fall back to the deterministic formatter rather than an apology —
-    # the tool result is already real data sitting in `record`; losing it
-    # behind a generic "couldn't answer" message would throw away a
-    # perfectly good answer over an unrelated LLM hiccup.
+    # Özetleyen LLM çağrısının kendisi başarısız olursa (sağlayıcı kesintisi,
+    # timeout), bir özür yerine deterministik formatlayıcıya düş — araç sonucu
+    # `record`'da zaten gerçek bir veri olarak duruyor; onu alakasız bir LLM
+    # aksaklığı yüzünden "cevaplayamadım" gibi genel bir mesajın arkasında
+    # kaybetmek yazık olurdu.
     draft_answer = await safe_ainvoke(
         llm,
         [
@@ -204,17 +204,17 @@ def _grounded_entity_values(entities: list[Entity]) -> dict[EntityType, set[str]
 def _validate_tool_args(
     tool_name: str, args: dict[str, object], grounded: dict[EntityType, set[str]]
 ) -> str | None:
-    """Refuse to execute a tool call whose financial identifier the model
-    invented instead of using one actually present in the conversation.
+    """Modelin uydurduğu, konuşmada hiç geçmemiş bir finansal kimlik
+    (account_id/card_last4) ile bir aracı çalıştırmayı reddeder.
 
-    A `bind_tools` model is free to fill in *any* string for `account_id`/
-    `card_last4` — nothing stops it from hallucinating a plausible-looking
-    one. This is the one check that stands between "the model reasoned about
-    which tool to call" (fine, that's the point) and "the model reasoned
-    about *whose account* to call it on" (never fine, see ADR-009).
+    Bir `bind_tools` modeli `account_id`/`card_last4` için istediği herhangi
+    bir string'i doldurmakta serbest — akla yatkın görünen bir tane uydurmasını
+    hiçbir şey engellemiyor. Bu, "model hangi aracı çağıracağına akıl yürüttü"
+    (sorun değil, zaten amaç bu) ile "model *kimin hesabına* çağıracağına akıl
+    yürüttü" (asla sorun değil değil, bkz. ADR-009) arasında duran tek kontrol.
 
-    Returns an error string to feed back to the model if the argument isn't
-    grounded, or None if the call may proceed.
+    Argüman grounded değilse modele geri beslenecek bir hata string'i, çağrı
+    devam edebilirse None döner.
     """
     if tool_name in ("get_balance", "list_transactions"):
         account_id = str(args.get("account_id", ""))
@@ -232,14 +232,13 @@ def _build_tool_specs(
     grounded: dict[EntityType, set[str]],
     collected: list[ToolCallRecord],
 ) -> list[BaseTool]:
-    """Build the LangChain tool objects `bind_tools` needs.
+    """`bind_tools`'un ihtiyaç duyduğu LangChain araç nesnelerini kurar.
 
-    Each closes over `tool_client` so its body is the *real* execution path
-    (through the same MCP client every other path uses, not a stub) —
-    argument grounding is checked first, and every call (successful, refused,
-    or failed) is appended to `collected` so the API's `tool_calls` field
-    reflects what the reasoning loop actually did, not just what the
-    deterministic path would have.
+    Her biri `tool_client`'ı kapatıyor, yani gövdesi diğer her yolun kullandığı
+    *gerçek* çalıştırma yolu (bir stub değil) — önce argüman grounding kontrol
+    ediliyor, her çağrı (başarılı, reddedilmiş ya da başarısız) `collected`'a
+    ekleniyor ki API'nin `tool_calls` alanı deterministik yolun ne yapacağını
+    değil, akıl yürütme döngüsünün gerçekte ne yaptığını yansıtsın.
     """
 
     async def _call(tool_name: str, args: dict[str, object]) -> str:
@@ -256,22 +255,22 @@ def _build_tool_specs(
 
     @lc_tool
     async def get_balance(account_id: str) -> str:
-        """Look up the current balance and currency for a DemoBank account by IBAN."""
+        """IBAN'a göre bir DemoBank hesabının güncel bakiyesini ve para birimini getirir."""
         return await _call("get_balance", {"account_id": account_id})
 
     @lc_tool
     async def list_transactions(account_id: str, limit: int = 10) -> str:
-        """List the most recent transactions for a DemoBank account by IBAN."""
+        """Bir DemoBank hesabının en son işlemlerini IBAN'a göre listeler."""
         return await _call("list_transactions", {"account_id": account_id, "limit": limit})
 
     @lc_tool
     async def block_card(card_last4: str, reason: str) -> str:
-        """Block a DemoBank card by its last 4 digits, e.g. after a loss or theft report."""
+        """Son 4 hanesiyle belirtilen bir DemoBank kartını bloklar (kayıp/çalıntı bildirimi vb.)."""
         return await _call("block_card", {"card_last4": card_last4, "reason": reason})
 
     @lc_tool
     async def open_support_ticket(subject: str, description: str) -> str:
-        """Open a human support ticket for anything the other tools can't resolve."""
+        """Diğer araçların çözemediği durumlar için bir destek talebi açar."""
         return await _call("open_support_ticket", {"subject": subject, "description": description})
 
     return [get_balance, list_transactions, block_card, open_support_ticket]
@@ -306,7 +305,7 @@ async def _reasoning_tool_call(
     for hop in range(max_hops):
         ai_message = await safe_ainvoke_message(llm_with_tools, messages, node="tool_agent")
         if ai_message is None:
-            break  # provider failure — fall through to whatever we've collected so far
+            break  # sağlayıcı hatası — şimdiye kadar toplananla devam et
 
         messages.append(ai_message)
         tool_calls = ai_message.tool_calls[:_MAX_TOOL_CALLS_PER_HOP]
@@ -356,12 +355,12 @@ def build_tool_agent_node(
     llm: BaseChatModel,
     settings: Settings,
 ) -> Callable[[GraphState], Awaitable[dict[str, object]]]:
-    """Bind a tool client + LLM into an async LangGraph node.
+    """Bir araç istemcisini + bir LLM'i async bir LangGraph düğümüne bağlar.
 
-    Dispatches to the deterministic single-tool path or the LLM-planned
-    multi-tool reasoning loop based on whether `llm` is the offline
-    `FakeChatModel` — decided once here (not per-request) since it can't
-    change mid-process.
+    Deterministik tek-araç yoluna mı yoksa LLM-planlı çoklu-araç akıl yürütme
+    döngüsüne mi gideceğine, `llm`'in offline `FakeChatModel` olup olmadığına
+    bakarak karar veriyor — bu karar burada bir kere veriliyor (her istekte
+    değil), çünkü süreç ortasında değişemez.
     """
     use_reasoning = not is_fake_model(llm)
 

@@ -24,13 +24,13 @@ logger = get_logger(__name__)
 
 
 class RequestIdMiddleware(BaseHTTPMiddleware):
-    """Stamp every request/response pair with a correlation id.
+    """Her istek/yanıt çiftine bir korelasyon id'si damgalar.
 
-    Set on `request.state` (routes that need it for logging, e.g. chat.py's
-    conversation binding, read it from there) and echoed back as `X-Request-Id`
-    so a caller — or a support ticket quoting this header — can be matched
-    directly to a line in the structured logs, without depending on any one
-    route implementing its own id generation.
+    `request.state`'e set edilir (loglama için buna ihtiyaç duyan route'lar,
+    ör. chat.py'nin konuşma bağlaması, oradan okur) ve `X-Request-Id` olarak
+    geri yankılanır ki bir çağıran — ya da bu header'ı alıntılayan bir destek
+    talebi — doğrudan yapısal loglardaki bir satırla eşleştirilebilsin, her
+    route'un kendi id üretimini yapmasına bağlı kalmadan.
     """
 
     async def dispatch(
@@ -47,10 +47,11 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     configure_logging(settings)
-    # Building the graph at startup (not per-request) means the vector store
-    # connection, embeddings, and MCP tool client are all set up once — a
-    # cold Chroma/embedding init on every request would make p99 latency
-    # unpredictable for no benefit, since none of this is per-user state.
+    # Grafiği başlangıçta (her istekte değil) kurmak, vektör deposu bağlantısı,
+    # embedding'ler ve MCP araç istemcisinin hepsinin bir kere kurulması demek
+    # — her istekte soğuk bir Chroma/embedding init'i, hiçbir kazanç olmadan
+    # p99 gecikmesini öngörülemez yapardı; bunların hiçbiri kullanıcıya özel
+    # bir durum değil zaten.
     app.state.settings = settings
     app.state.graph = build_graph(settings)
     logger.info(
@@ -65,14 +66,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(
     title="multi-agent-banking-rag",
-    description="Reference multi-agent RAG + tool-calling assistant for a retail-banking support domain.",
+    description="Retail-banking destek alanı için referans çoklu-ajan RAG + araç-çağırma asistanı.",
     version="0.1.0",
     lifespan=lifespan,
 )
-# CORS_ALLOWED_ORIGINS defaults to the frontend's local dev port (frontend/README.md)
-# — a real deployment sets it to the actual deployed frontend origin, never "*"
-# (this API has no auth; an open CORS policy would let any site call it on a
-# visitor's behalf).
+# CORS_ALLOWED_ORIGINS varsayılan olarak frontend'in lokal geliştirme portu
+# (frontend/README.md) — gerçek bir dağıtım bunu gerçek frontend origin'ine
+# set eder, asla "*" değil (bu API'de auth yok; açık bir CORS politikası
+# herhangi bir sitenin bir ziyaretçi adına bunu çağırmasına izin verirdi).
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_settings().cors_allowed_origins_list,
@@ -85,19 +86,19 @@ app.state.limiter = limiter
 app.include_router(health.router)
 app.include_router(chat.router)
 
-# /metrics is unauthenticated, matching this demo's no-auth posture everywhere
-# else (see README "Sınırlar"). A real deployment would put this behind the
-# cluster's internal network (Prometheus scrapes it there) rather than expose
-# it on the same public listener as /chat.
+# /metrics kimlik doğrulamasız — bu demo'nun her yerdeki auth-yok duruşuyla
+# tutarlı (bkz. README "Sınırlar"). Gerçek bir dağıtım bunu /chat ile aynı
+# public dinleyicide açık etmek yerine cluster'ın iç ağının arkasına koyardı
+# (Prometheus onu oradan çeker).
 Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
 
 
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> Response:
-    # Every LLM call behind /chat costs real money and has real latency — a
-    # naive client (or an abusive one) retrying in a tight loop shouldn't be
-    # able to run either up unbounded. See `app/api/routes/chat.py` for the
-    # actual per-route limit.
+    # /chat'in arkasındaki her LLM çağrısı gerçek para ve gerçek gecikme
+    # maliyeti taşıyor — saf ya da kötü niyetli bir istemcinin sıkı bir
+    # döngüde tekrar denemesi bunu sınırsız tüketememeli. Asıl route-bazlı
+    # sınır için bkz. `app/api/routes/chat.py`.
     logger.warning("rate_limit_exceeded", path=request.url.path, detail=str(exc.detail))
     response = JSONResponse(
         status_code=429,
@@ -113,10 +114,10 @@ async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) 
 async def validation_exception_handler(
     request: Request, exc: RequestValidationError
 ) -> JSONResponse:
-    # FastAPI's default 422 body doesn't match our documented ErrorResponse
-    # contract — a client handling error responses would need a special case
-    # just for validation failures. Reshape it into the same envelope as
-    # every other error this API returns.
+    # FastAPI'nin varsayılan 422 gövdesi belgelenmiş ErrorResponse sözleşmemizle
+    # uyuşmuyor — hata cevaplarını işleyen bir istemci sadece doğrulama
+    # hataları için özel bir durum yazmak zorunda kalırdı. Bu API'nin döndüğü
+    # her diğer hatayla aynı zarfa dönüştür.
     logger.info("request_validation_failed", path=request.url.path, errors=exc.errors())
     return JSONResponse(
         status_code=422,
@@ -130,9 +131,9 @@ async def validation_exception_handler(
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    # A stack trace in an API response is an information leak, not a helpful
-    # error message — log the real exception server-side, return a generic,
-    # typed error to the caller.
+    # API yanıtındaki bir stack trace faydalı bir hata mesajı değil, bir bilgi
+    # sızıntısıdır — gerçek exception'ı sunucu tarafında logla, çağırana
+    # jenerik, tipli bir hata döndür.
     logger.error("unhandled_exception", path=request.url.path, error=str(exc), exc_info=True)
     return JSONResponse(
         status_code=500,

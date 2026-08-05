@@ -1,10 +1,10 @@
-"""API + cross-module data contracts.
+"""API + modüller arası veri sözleşmeleri.
 
-Every boundary in this codebase (HTTP request/response, MCP tool payloads,
-LangGraph state fields that cross a node boundary) is typed here rather than
-passed around as `dict`. This is the one place other modules should import
-shared shapes from — avoids the "same concept, five different dict shapes"
-drift that shows up in agent codebases as they grow.
+Bu kod tabanındaki her sınır (HTTP istek/yanıt, MCP araç payload'ları, bir
+düğüm sınırını geçen LangGraph state alanları) `dict` olarak dolaştırılmak
+yerine burada tiplendiriliyor. Diğer modüllerin paylaşılan şekilleri import
+etmesi gereken tek yer burası — ajan kod tabanları büyüdükçe ortaya çıkan
+"aynı kavram, beş farklı dict şekli" savrulmasını önlüyor.
 """
 
 from __future__ import annotations
@@ -16,21 +16,21 @@ from pydantic import BaseModel, Field
 
 
 class IntentLabel(StrEnum):
-    RAG_QUERY = "RAG_QUERY"  # policy/FAQ question answerable from the knowledge base
-    ACCOUNT_ACTION = "ACCOUNT_ACTION"  # balance/statement/account-info lookups
-    TRANSACTION_ACTION = "TRANSACTION_ACTION"  # transfers, transaction history
-    CARD_ACTION = "CARD_ACTION"  # block/unblock/limit change
+    RAG_QUERY = "RAG_QUERY"  # bilgi tabanından yanıtlanabilecek politika/SSS sorusu
+    ACCOUNT_ACTION = "ACCOUNT_ACTION"  # bakiye/ekstre/hesap bilgisi sorgusu
+    TRANSACTION_ACTION = "TRANSACTION_ACTION"  # transfer, işlem geçmişi
+    CARD_ACTION = "CARD_ACTION"  # blokla/kaldır/limit değişikliği
     SMALL_TALK = "SMALL_TALK"
-    ESCALATE = "ESCALATE"  # user explicitly wants a human
+    ESCALATE = "ESCALATE"  # kullanıcı açıkça bir insan istiyor
     OUT_OF_SCOPE = "OUT_OF_SCOPE"
 
 
 class GuardrailFlag(StrEnum):
-    """Closed vocabulary for `guardrail_agent.py`'s outcomes.
+    """`guardrail_agent.py`'nin sonuçları için kapalı bir kelime dağarcığı.
 
-    Modeled as an enum (not ad-hoc strings) for the same reason `IntentLabel`
-    and `EntityType` are: a typo in a bare string flag would silently fail to
-    match anywhere it's checked, and neither mypy nor a test would catch it.
+    `IntentLabel` ve `EntityType` ile aynı sebepten bir enum olarak modellendi
+    (uydurma string'ler değil): bir string flag'deki bir yazım hatası, kontrol
+    edildiği hiçbir yerde sessizce eşleşmez, ne mypy ne de bir test bunu yakalar.
     """
 
     PII_REDACTED = "PII_REDACTED"
@@ -51,9 +51,9 @@ class EntityType(StrEnum):
 
 class Entity(BaseModel):
     type: EntityType
-    value: str = Field(description="Raw substring as it appeared in the user message")
+    value: str = Field(description="Kullanıcının mesajında geçtiği haliyle ham alt-dize")
     normalized: str | None = Field(
-        default=None, description="Canonicalized value, e.g. IBAN without spaces"
+        default=None, description="Kanonikleştirilmiş değer, ör. boşluksuz bir IBAN"
     )
     start: int | None = Field(default=None, ge=0)
     end: int | None = Field(default=None, ge=0)
@@ -89,16 +89,17 @@ class ChatMessage(BaseModel):
 
 
 class PendingEntityRequest(BaseModel):
-    """Set when `tool_agent` short-circuits a turn for a missing entity
-    (e.g. asked for a card's last 4 digits) and persisted by `memory_agent`
-    so the *next* turn — often just "1234", with no keyword ner_extractor
-    would normally require — can be understood as completing this request
-    rather than reclassified from scratch. See ADR-008.
+    """`tool_agent`, eksik bir varlık yüzünden bir turn'ü kısa devre yaptırdığında
+    (ör. kartın son 4 hanesini sorduğunda) set edilir ve `memory_agent`
+    tarafından kalıcı hale getirilir ki *bir sonraki* turn — genelde sadece
+    "1234", ner_extractor'ın normalde gerektireceği bir anahtar kelime olmadan
+    — sıfırdan yeniden sınıflandırılmak yerine bu isteği tamamlıyor olarak
+    anlaşılsın. Bkz. ADR-008.
 
-    `original_message` keeps the request that actually explained *why*
-    ("kartımı blokla, çalındı") — without it, a completed slot-fill would use
-    the bare follow-up ("4321") as `block_card`'s `reason` argument, which is
-    correct but useless to read back to the user.
+    `original_message`, asıl *neden*i açıklayan isteği tutuyor ("kartımı
+    blokla, çalındı") — bu olmasaydı, tamamlanmış bir slot-doldurma çıplak
+    takip cevabını ("4321") `block_card`'ın `reason` argümanı olarak
+    kullanırdı — doğru ama kullanıcıya geri okununca anlamsız.
     """
 
     intent: IntentLabel
@@ -108,7 +109,7 @@ class PendingEntityRequest(BaseModel):
 
 class ChatRequest(BaseModel):
     conversation_id: str | None = Field(
-        default=None, description="Omit to start a new conversation"
+        default=None, description="Yeni bir konuşma başlatmak için boş bırakın"
     )
     message: str = Field(min_length=1, max_length=4000)
 
@@ -130,14 +131,14 @@ class HealthResponse(BaseModel):
 
 
 class ErrorCode(StrEnum):
-    """HTTP-level failure codes only.
+    """Sadece HTTP seviyesindeki hata kodları.
 
-    Agent-level "failures" (iteration limit hit, guardrail blocked a reply,
-    a tool call came back empty) are deliberately NOT in this enum — they are
-    modeled as successful `ChatResponse`s carrying `GuardrailFlag`s, per
-    ADR-006 and the "return a result, don't raise for expected outcomes"
-    principle. An enum member that never gets raised is worse than no member
-    at all: it's a claim about behavior the code doesn't keep.
+    Ajan-seviyesi "hatalar" (iterasyon limitine ulaşma, guardrail'in bir
+    cevabı engellemesi, boş dönen bir araç çağrısı) bilinçli olarak bu enum'da
+    DEĞİL — ADR-006 ve "beklenen sonuçlar için raise etme, bir sonuç döndür"
+    prensibine göre, `GuardrailFlag` taşıyan başarılı `ChatResponse`'lar olarak
+    modelleniyorlar. Hiç raise edilmeyen bir enum üyesi, hiç üye olmamasından
+    beter — kodun tutmadığı bir davranış iddiası.
     """
 
     VALIDATION_ERROR = "VALIDATION_ERROR"

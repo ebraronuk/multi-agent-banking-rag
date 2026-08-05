@@ -1,9 +1,10 @@
 """Chat-model factory.
 
-Workers depend on `langchain_core.language_models.BaseChatModel`, never on a
-concrete provider class. That keeps `LLM_PROVIDER=fake` a drop-in swap for CI
-and offline dev, and makes swapping Anthropic/OpenAI a one-line change instead
-of a refactor.
+Worker'lar `langchain_core.language_models.BaseChatModel`'e bağımlı, hiçbir
+zaman somut bir sağlayıcı sınıfına değil. Bu, `LLM_PROVIDER=fake`'i CI ve
+offline geliştirme için doğrudan bir yer değiştirme yapıyor, Anthropic/OpenAI/
+Google arasında geçişi de bir refactor yerine tek satırlık bir değişikliğe
+indiriyor.
 """
 
 from __future__ import annotations
@@ -24,14 +25,14 @@ logger = get_logger(__name__)
 
 
 class FakeChatModel(BaseChatModel):
-    """Deterministic offline stand-in for LLM_PROVIDER=fake (CI, tests, no API key).
+    """LLM_PROVIDER=fake için offline yerine geçen deterministik model (CI, testler, anahtarsız).
 
-    Hashes the last human message instead of calling out to a real model, so
-    the same input always produces the same output — useful for snapshotting
-    graph behaviour in tests without burning API credits or hitting the network.
-    Tool-calling nodes special-case this model directly (see
-    `agents/workers/tool_agent.py`) rather than relying on `bind_tools`, since a
-    hash has no notion of "which tool applies here".
+    Gerçek bir modele çıkmak yerine son insan mesajının hash'ini alıyor, yani
+    aynı girdi her zaman aynı çıktıyı üretiyor — API kredisi harcamadan ya da
+    ağa çıkmadan graf davranışını testlerde snapshot'lamak için kullanışlı.
+    Araç-çağırma düğümleri bu modeli `bind_tools`'a güvenmek yerine doğrudan
+    özel olarak ele alıyor (bkz. `agents/workers/tool_agent.py`) — bir hash'in
+    "burada hangi araç geçerli" diye bir fikri yok çünkü.
     """
 
     response_prefix: str = "[fake-llm]"
@@ -49,10 +50,11 @@ class FakeChatModel(BaseChatModel):
     ) -> ChatResult:
         last_human = next((m.content for m in reversed(messages) if m.type == "human"), "")
         raw_digest = hashlib.sha256(str(last_human).encode()).hexdigest()[:8]
-        # Hyphenated so a hex digest never contains a 6+ digit run: hex chars
-        # are 0-9a-f, so a plain 8-char digest can accidentally look like a
-        # phone number/PAN fragment and trip the guardrail's PII redaction
-        # (agents/workers/guardrail_agent.py) on completely harmless fake output.
+        # Tirelerle ayrıldı ki bir hex digest hiçbir zaman 6+ haneli bir dizi
+        # içermesin: hex karakterleri 0-9a-f olduğu için düz 8 karakterlik bir
+        # digest kazara bir telefon/kart numarası parçasına benzeyebilir ve
+        # guardrail'in PII redaksiyonunu (agents/workers/guardrail_agent.py)
+        # tamamen zararsız bir sahte çıktı üzerinde tetikleyebilir.
         digest = "-".join(raw_digest[i : i + 2] for i in range(0, len(raw_digest), 2))
         content = f"{self.response_prefix} response-{digest}: {str(last_human)[:160]}"
         return ChatResult(generations=[ChatGeneration(message=AIMessage(content=content))])
@@ -65,16 +67,16 @@ def get_chat_model(settings: Settings | None = None) -> BaseChatModel:
     if provider == LLMProvider.ANTHROPIC:
         from langchain_anthropic import ChatAnthropic
 
-        # `resolved_llm_provider()` only returns ANTHROPIC when the key is set
-        # (see Settings.resolved_llm_provider), so this is guaranteed non-None
-        # at runtime — the assert exists to narrow the type for mypy.
+        # `resolved_llm_provider()` sadece anahtar set edilmişse ANTHROPIC
+        # döner (bkz. Settings.resolved_llm_provider), o yüzden bu runtime'da
+        # garanti olarak None değil — assert sadece mypy için tipi daraltıyor.
         assert settings.anthropic_api_key is not None
         return ChatAnthropic(
             model_name=settings.llm_model,
             api_key=SecretStr(settings.anthropic_api_key),
             timeout=settings.request_timeout_seconds,
             max_retries=2,
-            stop=None,  # langchain-anthropic's typed __init__ requires this explicitly, though it defaults to None at runtime
+            stop=None,  # langchain-anthropic'in tipli __init__'i bunu açıkça istiyor, runtime'da zaten None
         )
 
     if provider == LLMProvider.OPENAI:
@@ -112,13 +114,13 @@ async def safe_ainvoke_message(
     *,
     node: str,
 ) -> AIMessage | None:
-    """Call the LLM and return the raw `AIMessage`, or None if the call raised.
+    """LLM'i çağırır, ham `AIMessage`'ı ya da çağrı patladıysa None döner.
 
-    Accepts a plain `BaseChatModel` or a bound `Runnable` (what
-    `llm.bind_tools(...)` returns — `tool_agent`'s reasoning loop passes one
-    of those) — both share the same `.ainvoke()` contract. Returning the full
-    message (not just `.content`) is what that loop needs: it has to read
-    `.tool_calls`, not only text.
+    Düz bir `BaseChatModel` ya da bağlı bir `Runnable` (`llm.bind_tools(...)`'un
+    döndürdüğü — tool_agent'ın akıl yürütme döngüsü bunu geçiyor) kabul eder,
+    ikisi de aynı `.ainvoke()` sözleşmesini paylaşıyor. Tam mesajı (sadece
+    `.content`'i değil) döndürmesinin sebebi, o döngünün `.tool_calls`'a da
+    ihtiyaç duyması, sadece metne değil.
     """
     try:
         response = await llm.ainvoke(messages)
@@ -129,15 +131,14 @@ async def safe_ainvoke_message(
 
 
 async def safe_ainvoke(llm: BaseChatModel, messages: list[BaseMessage], *, node: str) -> str | None:
-    """Call the LLM and return its text, or None if the call raised.
+    """LLM'i çağırır, metnini ya da çağrı patladıysa None döner.
 
-    `rag_agent`/`smalltalk_agent`/`tool_agent`'s deterministic path all funnel
-    their generation call through here rather than each catching provider
-    exceptions themselves: a real Anthropic/OpenAI outage, rate limit, or
-    timeout should degrade this turn's answer (an unset `draft_answer`
-    already flows into `guardrail_agent.py`'s NO_DRAFT_PRODUCED fallback),
-    not 500 the whole `/chat` request. One hardened call site instead of
-    three copies of the same try/except.
+    `rag_agent`/`smalltalk_agent`/`tool_agent`'ın deterministik yolu, üretim
+    çağrısını kendi try/except'ini üç kopya olarak yazmak yerine buradan
+    geçiriyor: gerçek bir Anthropic/OpenAI/Google kesintisi, timeout ya da
+    rate limit bu turn'ün cevabını bozmalı (set edilmemiş bir `draft_answer`
+    zaten `guardrail_agent.py`'nin NO_DRAFT_PRODUCED yoluna akıyor), tüm
+    `/chat` isteğini 500'e düşürmemeli.
     """
     response = await safe_ainvoke_message(llm, messages, node=node)
     return str(response.content) if response is not None else None

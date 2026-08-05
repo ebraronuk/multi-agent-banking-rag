@@ -1,4 +1,4 @@
-"""Policy text surfaced to the user when the guardrail node blocks or redacts a response."""
+"""Guardrail düğümü bir yanıtı engellediğinde/redakte ettiğinde kullanıcıya gösterilen metinler."""
 
 FINANCIAL_ADVICE_DISCLAIMER = (
     "Bu konuda kişiye özel yatırım tavsiyesi veremiyorum. "

@@ -1,9 +1,10 @@
-"""Unit tests for `agents/memory.py`.
+"""`agents/memory.py` için birim testler.
 
-`RedisMemory` is tested against a mocked `redis.asyncio.Redis` client (no
-real Redis needed) — the point is to verify its own logic (key format, TTL
-passthrough, graceful degradation on a storage error), not Redis itself.
-`InMemoryMemory` needs no mocking; it's the real thing used in CI/local dev.
+`RedisMemory`, mocklu bir `redis.asyncio.Redis` istemcisine karşı test
+ediliyor (gerçek Redis'e gerek yok) — amaç Redis'in kendisini değil, kendi
+mantığını (key formatı, TTL aktarımı, bir depolama hatasında zarifçe düşme)
+doğrulamak. `InMemoryMemory`'nin mock'lanmaya ihtiyacı yok; CI/lokal
+geliştirmede kullanılan gerçek şeyin ta kendisi.
 """
 
 from __future__ import annotations
@@ -41,7 +42,7 @@ async def test_in_memory_truncates_to_history_limit() -> None:
     context = await memory.load("conv-2")
 
     assert len(context.turns) == 4
-    assert context.turns[0].content == "soru 3"  # oldest of the last 2 turns kept
+    assert context.turns[0].content == "soru 3"  # tutulan son 2 turn'ün en eskisi
     assert context.turns[-1].content == "cevap 4"
 
 
@@ -110,7 +111,8 @@ async def test_redis_memory_save_degrades_gracefully_on_connection_error() -> No
     memory._client = AsyncMock()
     memory._client.get.side_effect = ConnectionError("redis unreachable")
 
-    # Must not raise — a lost write degrades next turn's memory, it doesn't fail this one.
+    # Raise etmemeli — kaybolan bir yazma bir sonraki turn'ün hafızasını
+    # bozar, bunu başarısız yapmaz.
     await memory.save_turn("conv-6", "merhaba", "merhaba", None, history_limit=6)
 
 
@@ -138,5 +140,5 @@ def test_synthesize_bare_answer_entity_rejects_unrelated_text() -> None:
     pending = PendingEntityRequest(intent=IntentLabel.CARD_ACTION, entity_type=EntityType.CARD_LAST4, original_message="kartımı blokla")
 
     assert synthesize_bare_answer_entity("bilmiyorum", pending) is None
-    # Not exactly 4 digits — could be an amount, a year, anything else; don't guess.
+    # Tam 4 hane değil — bir tutar, bir yıl, başka bir şey olabilir; tahmin etme.
     assert synthesize_bare_answer_entity("12345", pending) is None

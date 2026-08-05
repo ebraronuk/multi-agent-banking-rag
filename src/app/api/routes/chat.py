@@ -1,6 +1,6 @@
-"""The one HTTP entry point into the agent graph. Intentionally thin: parse →
-invoke the compiled graph → shape the response. All decision-making lives in
-the graph's nodes, never here."""
+"""Ajan grafiğine giden tek HTTP giriş noktası. Bilinçli olarak ince: parse et
+→ derlenmiş grafiği çağır → yanıtı şekillendir. Tüm karar verme grafiğin
+düğümlerinde yaşıyor, burada asla değil."""
 
 from __future__ import annotations
 
@@ -21,21 +21,21 @@ router = APIRouter(tags=["chat"])
 @router.post(
     "/chat",
     response_model=ChatResponse,
-    summary="Send a message to the banking assistant",
+    summary="Bankacılık asistanına bir mesaj gönder",
     responses={
-        422: {"model": ErrorResponse, "description": "Request failed validation"},
-        429: {"model": ErrorResponse, "description": "Too many requests"},
-        500: {"model": ErrorResponse, "description": "Unexpected server error"},
+        422: {"model": ErrorResponse, "description": "İstek doğrulamadan geçemedi"},
+        429: {"model": ErrorResponse, "description": "Çok fazla istek"},
+        500: {"model": ErrorResponse, "description": "Beklenmeyen sunucu hatası"},
     },
 )
 @limiter.limit(get_settings().chat_rate_limit)
 async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
-    """Run one conversational turn through the full agent graph.
+    """Bir konuşma turn'ünü tüm ajan grafiği üzerinden çalıştırır.
 
-    Routes through NER → intent classification → the supervisor → the
-    matching worker (RAG / tool-calling / small talk / escalate) → the
-    guardrail, and returns the final answer alongside its citations, tool
-    calls, extracted entities, and a per-node trace (see `AgentTraceStep`).
+    NER → niyet sınıflandırma → supervisor → eşleşen worker (RAG / araç
+    çağırma / sohbet / aktarım) → guardrail sırasıyla ilerler, son cevabı
+    alıntıları, araç çağrıları, çıkarılan varlıkları ve düğüm-bazlı trace'iyle
+    (bkz. `AgentTraceStep`) birlikte döner.
     """
     conversation_id = payload.conversation_id or str(uuid.uuid4())
     request_id: str = request.state.request_id

@@ -1,9 +1,9 @@
-"""Loads/saves per-conversation memory around the rest of the graph.
+"""Grafiğin geri kalanının etrafında, konuşma başına hafızayı yükler/kaydeder.
 
-`memory_load` runs first (before `ner_agent`) so intent/entity extraction can
-see what the previous turn was waiting to hear back (see ADR-008).
-`memory_save` runs last (after `guardrail`) so it persists the answer that
-actually shipped, not an intermediate draft.
+`memory_load` önce çalışır (`ner_agent`'tan bile önce) ki niyet/varlık
+çıkarımı önceki turn'ün ne beklediğini görebilsin (bkz. ADR-008).
+`memory_save` en son çalışır (`guardrail`'den sonra) ki ara bir taslağı değil,
+gerçekten gönderilen cevabı kalıcı hale getirsin.
 """
 
 from __future__ import annotations

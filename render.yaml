@@ -1,0 +1,43 @@
+services:
+  - type: web
+    name: api
+    runtime: docker
+    dockerfilePath: docker/Dockerfile
+    plan: free
+    healthCheckPath: /healthz
+    envVars:
+      - key: LLM_PROVIDER
+        value: google
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: LLM_MODEL
+        value: gemini-2.0-flash
+      - key: EMBEDDING_PROVIDER
+        value: fake
+      - key: CHROMA_PERSIST_DIR
+        value: /data/vectorstore
+      - key: DATABASE_URL
+        sync: false
+      - key: MCP_SERVER_HOST
+        fromService:
+          name: mcp
+          type: pserv
+          property: host
+      - key: MCP_SERVER_PORT
+        value: "8765"
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+
+  - type: pserv
+    name: mcp
+    runtime: docker
+    dockerfilePath: docker/Dockerfile
+    dockerCommand: python -m mcp_server.server
+    plan: free
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: MCP_SERVER_HOST
+        value: "0.0.0.0"
+      - key: MCP_SERVER_PORT
+        value: "8765"

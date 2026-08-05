@@ -1,8 +1,8 @@
-"""Handles IntentLabel.SMALL_TALK — greetings, thanks, chit-chat.
+"""IntentLabel.SMALL_TALK'ı işler — selamlama, teşekkür, sohbet.
 
-Kept as its own node (rather than folded into the RAG agent) so it never has
-retrieval or tools in its context: a smalltalk turn has no business citing a
-policy document or calling `get_balance`.
+RAG ajanına gömülmek yerine kendi düğümü olarak duruyor ki bağlamında hiçbir
+zaman retrieval ya da araç olmasın: bir sohbet turn'ünün bir politika
+dokümanına alıntı yapmaya ya da `get_balance` çağırmaya işi yok.
 """
 
 from __future__ import annotations

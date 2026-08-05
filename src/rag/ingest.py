@@ -1,10 +1,10 @@
-"""Ingestion of the sample banking-FAQ knowledge base into chunked Documents.
+"""Örnek bankacılık SSS bilgi tabanını parçalanmış Document'lara aktarır.
 
-Chunking (rather than embedding whole files) keeps retrieved context short
-and topically focused: a 300-word FAQ doc already covers one policy, but
-splitting it still bounds worst-case snippet length and lets the retriever
-surface the single paragraph that answers the question instead of the whole
-document.
+Tüm dosyayı embed etmek yerine parçalamak (chunking), getirilen bağlamı kısa
+ve konuya odaklı tutuyor: 300 kelimelik bir SSS dokümanı zaten tek bir
+politikayı kapsıyor, ama yine de parçalamak en kötü durum snippet uzunluğunu
+sınırlıyor ve retriever'ın tüm doküman yerine soruyu yanıtlayan tek bir
+paragrafı öne çıkarmasını sağlıyor.
 """
 
 from __future__ import annotations

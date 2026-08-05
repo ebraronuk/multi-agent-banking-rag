@@ -1,14 +1,12 @@
-"""Embedding backends for the retrieval pipeline.
+"""Retrieval pipeline'ın embedding backend'leri.
 
-`FakeHashEmbeddings` is a deterministic, offline, zero-dependency stand-in for
-a real embedding model. It exists so the whole system (ingestion, retrieval,
-the RAG agent, CI) can run end-to-end with zero API keys and zero network
-access — a hard requirement for a portfolio project that must be cloned and
-demoed by someone without DemoBank credentials. Its retrieval quality is
-obviously worse than a real embedding model (it has no notion of synonymy or
-semantics, only shared tokens): that trade-off is deliberate and documented
-here, not hidden. `EMBEDDING_PROVIDER=openai` swaps in real embeddings without
-touching any calling code.
+`FakeHashEmbeddings`, gerçek bir embedding modelinin deterministik, offline,
+sıfır-bağımlılıklı bir yerine geçeni. Tüm sistemin (ingestion, retrieval, RAG
+ajanı, CI) sıfır API anahtarı ve sıfır ağ erişimiyle uçtan uca çalışabilmesi
+için var. Retrieval kalitesi gerçek bir embedding modelinden açıkça daha
+düşük (eş anlamlılık ya da anlam bilgisi yok, sadece paylaşılan token'lar) —
+bu bilinçli bir tercih, gizlenmiyor. `EMBEDDING_PROVIDER=openai`, hiçbir
+çağıran kodu değiştirmeden gerçek embedding'lere geçiyor.
 """
 
 from __future__ import annotations
@@ -24,12 +22,12 @@ _DIMENSIONS = 384
 
 
 class FakeHashEmbeddings(Embeddings):
-    """Feature-hashing bag-of-words embedding, L2-normalized for cosine similarity.
+    """Feature-hashing bag-of-words embedding, cosine benzerliği için L2-normalize.
 
-    Each token is hashed into one of `_DIMENSIONS` buckets with a deterministic
-    sign, so two texts sharing tokens end up with positive cosine similarity
-    and unrelated texts land near-orthogonal — enough signal to exercise the
-    hybrid retriever and reranker without a real model.
+    Her token, deterministik bir işaretle `_DIMENSIONS` bucket'ından birine
+    hash'leniyor — ortak token paylaşan iki metin pozitif cosine benzerliğine,
+    alakasız metinler neredeyse ortogonale düşüyor. Gerçek bir model olmadan
+    hibrit retriever'ı ve reranker'ı çalıştırmaya yetecek kadar sinyal.
     """
 
     def __init__(self, dimensions: int = _DIMENSIONS) -> None:
@@ -58,17 +56,17 @@ class FakeHashEmbeddings(Embeddings):
 
 
 def get_embeddings(settings: Settings) -> Embeddings:
-    """Real embeddings when configured and a key is present, fake otherwise.
+    """Yapılandırılmış ve bir anahtar varsa gerçek embedding, yoksa fake.
 
-    Mirrors `app.core.llm.get_chat_model`'s fail-open-to-fake behaviour: a
-    misconfigured or key-less environment should still boot and serve
-    (degraded) traffic rather than crash at import time.
+    `app.core.llm.get_chat_model`'in fail-open-to-fake davranışını
+    yansıtıyor: yanlış yapılandırılmış ya da anahtarsız bir ortam import
+    zamanında çökmek yerine yine de (düşük kaliteli) trafiği servis etmeli.
     """
     if settings.embedding_provider == EmbeddingProvider.OPENAI and settings.openai_api_key:
         from langchain_openai import OpenAIEmbeddings
         from pydantic import SecretStr
 
-        assert settings.openai_api_key is not None  # narrows for mypy; already checked above
+        assert settings.openai_api_key is not None  # mypy için daraltma; yukarıda zaten kontrol edildi
         return OpenAIEmbeddings(
             model=settings.openai_embedding_model,
             api_key=SecretStr(settings.openai_api_key),
