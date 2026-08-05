@@ -58,6 +58,14 @@ class Settings(BaseSettings):
     langsmith_tracing: bool = False
     langsmith_api_key: str | None = None
 
+    redis_url: str | None = Field(
+        default=None,
+        description="If unset, conversation memory falls back to an in-process dict "
+        "(fine for local dev/tests, lost on restart, not shared across replicas).",
+    )
+    conversation_history_limit: int = Field(default=6, ge=1, le=50)
+    conversation_ttl_seconds: int = Field(default=86400, ge=60)
+
     @property
     def mcp_server_url(self) -> str:
         # "/mcp" is FastMCP's default streamable-HTTP path (`fastmcp.settings.streamable_http_path`)

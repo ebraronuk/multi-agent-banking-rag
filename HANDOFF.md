@@ -28,6 +28,12 @@ Bu depoya yeni katılan biri için: nereden başla, neye dikkat et.
   ile anlamlı bir tool-call üretemeyeceğini bildiği için `is_fake_model` kontrolüyle
   deterministik bir entity→tool eşlemesine düşüyor. Yeni bir worker LLM'den yapılandırılmış
   çıktı bekliyorsa aynı deseni (fake path + gerçek path + `try/except` fallback) izlemeli.
+- Yeni bir araç eklerseniz `tool_agent.py`'de **iki** yeri güncellemeniz gerekiyor:
+  `_INTENT_TOOL_MAP` (deterministik/fake yol) ve `_build_tool_specs` (LLM-planlı/gerçek
+  yol, ADR-009) — ikisi senkron kalmazsa fake modda çalışan bir şey gerçek modda hiç
+  görünmez (ya da tersi). Yeni aracın `account_id`/`card_last4` gibi bir finansal
+  parametresi varsa `_validate_tool_args`'a da eklenmeli, yoksa model bu alana
+  istediği değeri koyabilir, hiçbir doğrulamadan geçmeden çalıştırılır.
 - `GraphState`'teki liste alanları iki türlü davranıyor: `trace`/`tool_calls`
   `operator.add` reducer'ıyla **birikiyor** (bir düğüm sadece kendi yeni girdilerini
   döndürür), `entities`/`guardrail_flags` düz üzerine yazılıyor (sahibi tek düğüm).
@@ -61,8 +67,24 @@ Bu depoya yeni katılan biri için: nereden başla, neye dikkat et.
   mock'layarak test ediliyor (`_FakeClientContext`) — gerçek bir MCP sunucusu ayağa
   kaldırmadan hem başarı hem bağlantı-hatası yollarını kapsıyor; gerçek ağ üzerinden uçtan
   uca doğrulama yine de Docker'da manuel yapıldı (bkz. commit geçmişi).
+- `GraphState`'te **iki ayrı** bekleyen-slot alanı var, karıştırmayın:
+  `carried_pending_request` (bu turn'ün *girişi* — `memory_load`'un geçmiş turn'den
+  yüklediği) ve `pending_entity_request` (bu turn'ün *çıkışı* — sadece `tool_agent`
+  eksik bir varlık yüzünden kısa devre yaptığında set eder, aksi halde `None` kalır ve
+  `memory_save` bunu yazınca eski istek otomatik "unutulur"). Bunları tek bir alana
+  birleştirmek, konuyu değiştiren bir turn'den sonra eski bir slot-doldurma isteğinin
+  sessizce askıda kalmasına yol açar (bkz. ADR-008).
+- `agents/memory.py::synthesize_bare_answer_entity` kasıtlı olarak dar (tam 4 haneli
+  sayı / IBAN deseni) — "muhtemelen bu cevaptır" tarzı daha geniş bir tahmin eklemeyin;
+  yanlış bir bankacılık işlemini tetikleme riski, kullanıcıya bir kez daha sormaktan
+  her zaman daha kötüdür.
+- `app/core/rate_limit.py`'deki gibi, `agents/memory.py::_fallback_memory` da process
+  ömürlü bir singleton — testler arası state sızıntısı riski aynı `limiter.reset()`
+  deseniyle ele alınmalı; şu an `tests/conftest.py` bunu yapmıyor çünkü her testin kendi
+  `conversation_id`'si var (çakışma olmuyor), ama tüm testler aynı `conversation_id`'yi
+  paylaşmaya başlarsa bu artık geçerli olmayabilir.
 
 ## Yapılmadı / bilinçli olarak ertelendi
 
-`README.md`'nin "Sınırlar / sonraki adımlar" bölümüne bakın — kalıcı konuşma geçmişi,
-çok adımlı tool planlama, auth, LangSmith tracing.
+`README.md`'nin "Sınırlar / sonraki adımlar" bölümüne bakın — Redis'te kalıcılık,
+turlar arası çok adımlı planlama, auth, LangSmith tracing.

@@ -12,6 +12,7 @@ from __future__ import annotations
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
+from agents.memory import get_conversation_memory
 from agents.state import GraphState
 from agents.supervisor import (
     NODE_ESCALATE,
@@ -26,6 +27,7 @@ from agents.tools.mcp_client import get_tool_client
 from agents.workers.escalate_agent import escalate_node
 from agents.workers.guardrail_agent import build_guardrail_node
 from agents.workers.intent_agent import build_intent_node
+from agents.workers.memory_agent import build_memory_load_node, build_memory_save_node
 from agents.workers.ner_agent import build_ner_node
 from agents.workers.rag_agent import build_rag_node
 from agents.workers.smalltalk_agent import build_smalltalk_node
@@ -34,6 +36,8 @@ from app.core.config import Settings
 from app.core.llm import get_chat_model
 from rag.retriever import build_retriever
 
+NODE_MEMORY_LOAD = "memory_load"
+NODE_MEMORY_SAVE = "memory_save"
 NODE_NER = "ner_agent"
 NODE_INTENT = "intent_agent"
 NODE_SUPERVISOR = "supervisor"
@@ -43,6 +47,7 @@ def build_graph(settings: Settings) -> CompiledStateGraph:
     llm = get_chat_model(settings)
     retriever = build_retriever(settings)
     tool_client = get_tool_client(settings)
+    memory = get_conversation_memory(settings)
 
     graph = StateGraph(GraphState)
 
@@ -53,6 +58,7 @@ def build_graph(settings: Settings) -> CompiledStateGraph:
     # error (the two bare-function nodes below need no ignore; every
     # factory-built one does). Runtime behaviour is verified by the full test
     # suite in tests/integration and tests/e2e, which exercises every node.
+    graph.add_node(NODE_MEMORY_LOAD, build_memory_load_node(memory))  # type: ignore[call-overload]
     graph.add_node(NODE_NER, build_ner_node())  # type: ignore[call-overload]
     graph.add_node(NODE_INTENT, build_intent_node(llm))  # type: ignore[call-overload]
     graph.add_node(NODE_SUPERVISOR, supervisor_node)
@@ -62,8 +68,10 @@ def build_graph(settings: Settings) -> CompiledStateGraph:
     graph.add_node(NODE_SMALLTALK, build_smalltalk_node(llm))  # type: ignore[arg-type]
     graph.add_node(NODE_ESCALATE, escalate_node)
     graph.add_node(NODE_GUARDRAIL, build_guardrail_node(settings))  # type: ignore[arg-type]
+    graph.add_node(NODE_MEMORY_SAVE, build_memory_save_node(memory, settings))  # type: ignore[arg-type]
 
-    graph.add_edge(START, NODE_NER)
+    graph.add_edge(START, NODE_MEMORY_LOAD)
+    graph.add_edge(NODE_MEMORY_LOAD, NODE_NER)
     graph.add_edge(NODE_NER, NODE_INTENT)
     graph.add_edge(NODE_INTENT, NODE_SUPERVISOR)
 
@@ -86,6 +94,7 @@ def build_graph(settings: Settings) -> CompiledStateGraph:
     graph.add_edge(NODE_TOOL_AGENT, NODE_SUPERVISOR)
     graph.add_edge(NODE_SMALLTALK, NODE_GUARDRAIL)
     graph.add_edge(NODE_ESCALATE, NODE_GUARDRAIL)
-    graph.add_edge(NODE_GUARDRAIL, END)
+    graph.add_edge(NODE_GUARDRAIL, NODE_MEMORY_SAVE)
+    graph.add_edge(NODE_MEMORY_SAVE, END)
 
     return graph.compile()

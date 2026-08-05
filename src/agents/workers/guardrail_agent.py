@@ -20,7 +20,7 @@ from agents.prompts.guardrail_prompt import (
 from agents.state import GraphState
 from app.core.config import Settings
 from app.core.logging import get_logger
-from schemas.dto import AgentTraceStep
+from schemas.dto import AgentTraceStep, GuardrailFlag
 
 logger = get_logger(__name__)
 
@@ -62,7 +62,7 @@ def _contains_advice_language(text: str) -> bool:
 
 def build_guardrail_node(settings: Settings) -> Callable[[GraphState], dict[str, object]]:
     def guardrail_node(state: GraphState) -> dict[str, object]:
-        flags: list[str] = list(state.get("guardrail_flags", []))
+        flags: list[GuardrailFlag] = list(state.get("guardrail_flags", []))
         draft = state.get("draft_answer")
         iteration_count = state.get("iteration_count", 0)
         tool_agent_pending = state.get("intent") is not None and not state.get(
@@ -71,17 +71,17 @@ def build_guardrail_node(settings: Settings) -> Callable[[GraphState], dict[str,
 
         if iteration_count >= settings.max_agent_iterations and tool_agent_pending:
             final_answer = ITERATION_LIMIT_MESSAGE
-            flags.append("ESCALATED_ITERATION_LIMIT")
+            flags.append(GuardrailFlag.ESCALATED_ITERATION_LIMIT)
         elif not draft:
             final_answer = NO_DRAFT_FALLBACK_MESSAGE
-            flags.append("NO_DRAFT_PRODUCED")
+            flags.append(GuardrailFlag.NO_DRAFT_PRODUCED)
         elif _contains_advice_language(draft):
             final_answer = FINANCIAL_ADVICE_DISCLAIMER
-            flags.append("FINANCIAL_ADVICE_BLOCKED")
+            flags.append(GuardrailFlag.FINANCIAL_ADVICE_BLOCKED)
         else:
             final_answer, was_redacted = _redact_sensitive_numbers(draft)
             if was_redacted:
-                flags.append("PII_REDACTED")
+                flags.append(GuardrailFlag.PII_REDACTED)
 
         if flags:
             logger.info(

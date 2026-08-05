@@ -88,6 +88,24 @@ class ChatMessage(BaseModel):
     content: str
 
 
+class PendingEntityRequest(BaseModel):
+    """Set when `tool_agent` short-circuits a turn for a missing entity
+    (e.g. asked for a card's last 4 digits) and persisted by `memory_agent`
+    so the *next* turn — often just "1234", with no keyword ner_extractor
+    would normally require — can be understood as completing this request
+    rather than reclassified from scratch. See ADR-008.
+
+    `original_message` keeps the request that actually explained *why*
+    ("kartımı blokla, çalındı") — without it, a completed slot-fill would use
+    the bare follow-up ("4321") as `block_card`'s `reason` argument, which is
+    correct but useless to read back to the user.
+    """
+
+    intent: IntentLabel
+    entity_type: EntityType
+    original_message: str
+
+
 class ChatRequest(BaseModel):
     conversation_id: str | None = Field(
         default=None, description="Omit to start a new conversation"

@@ -43,4 +43,12 @@ async def test_policy_question_returns_a_grounded_citation(seeded_client: AsyncC
     assert body["guardrail_flags"] == [] or "PII_REDACTED" in body["guardrail_flags"]
 
     node_sequence = [step["node"] for step in body["trace"]]
-    assert node_sequence == ["ner_agent", "intent_agent", "supervisor", "rag_agent", "guardrail"]
+    assert node_sequence == [
+        "memory_load",
+        "ner_agent",
+        "intent_agent",
+        "supervisor",
+        "rag_agent",
+        "guardrail",
+        "memory_save",
+    ]

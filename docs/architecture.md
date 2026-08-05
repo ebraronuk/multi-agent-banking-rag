@@ -9,12 +9,13 @@ arasında akar; her düğüm sadece kendi sahip olduğu alanları günceller (bk
 
 ```mermaid
 flowchart TD
-    START([kullanıcı mesajı]) --> NER[ner_agent<br/><i>IBAN/tutar/tarih/kart çıkar</i>]
-    NER --> INTENT[intent_agent<br/><i>niyet sınıflandır</i>]
+    START([kullanıcı mesajı]) --> MEMLOAD[memory_load<br/><i>geçmiş + bekleyen slot'u yükle</i>]
+    MEMLOAD --> NER[ner_agent<br/><i>IBAN/tutar/tarih/kart çıkar<br/>+ slot-doldurma sentezi</i>]
+    NER --> INTENT[intent_agent<br/><i>niyet sınıflandır<br/>ya da bekleyeni sürdür</i>]
     INTENT --> SUP{supervisor<br/><i>intent'e göre yönlendir</i>}
 
     SUP -->|RAG_QUERY| RAG[rag_agent<br/><i>hibrit retrieval + LLM yanıt</i>]
-    SUP -->|ACCOUNT/TRANSACTION/CARD_ACTION| TOOL[tool_agent<br/><i>MCP araç çağrısı</i>]
+    SUP -->|ACCOUNT/TRANSACTION/CARD_ACTION| TOOL[tool_agent<br/><i>deterministik ya da<br/>LLM-planlı araç çağrısı</i>]
     SUP -->|SMALL_TALK| CHAT[smalltalk_agent]
     SUP -->|ESCALATE / OUT_OF_SCOPE / bilinmiyor| ESC[escalate_agent]
 
@@ -25,21 +26,24 @@ flowchart TD
     CHAT --> GUARD
     ESC --> GUARD
 
-    GUARD --> END([final_answer + trace])
+    GUARD --> MEMSAVE[memory_save<br/><i>turu + bekleyen slot'u kaydet</i>]
+    MEMSAVE --> END([final_answer + trace])
 ```
 
 ## Düğümler ve sorumlulukları
 
 | Düğüm | Sorumluluk | LLM kullanır mı? | Kaynak |
 |---|---|---|---|
-| `ner_agent` | IBAN, tutar/döviz, tarih, kart son 4 hane, hesap türü çıkarımı | Hayır (regex) | `src/nlp/ner_extractor.py` |
-| `intent_agent` | 7 sınıftan niyet sınıflandırma | Fake modda hayır, gerçek modda evet (yapılandırılmış çıktı + kural tabanlı fallback) | `src/nlp/intent_classifier.py` |
+| `memory_load` | Redis'ten (ya da in-memory fallback) geçmiş turları + bekleyen slot-doldurma isteğini yükle | Hayır | `src/agents/memory.py`, `src/agents/workers/memory_agent.py` |
+| `ner_agent` | IBAN, tutar/döviz, tarih, kart son 4 hane, hesap türü çıkarımı + bekleyen bir slot varsa bariz cevabı sentezleme | Hayır (regex) | `src/nlp/ner_extractor.py`, `src/agents/memory.py::synthesize_bare_answer_entity` |
+| `intent_agent` | 7 sınıftan niyet sınıflandırma; bekleyen slot cevaplandıysa niyeti yeniden sınıflandırmadan sürdürür | Fake modda hayır, gerçek modda evet (yapılandırılmış çıktı + kural tabanlı fallback) | `src/nlp/intent_classifier.py` |
 | `supervisor` | Rota kararı + iz kaydı | Hayır (kasıtlı olarak, bkz. ADR-002) | `src/agents/supervisor.py` |
-| `rag_agent` | Hibrit (vektör+BM25) retrieval + alıntılı yanıt | Evet | `src/rag/retriever.py`, `src/agents/workers/rag_agent.py` |
-| `tool_agent` | Varlıklardan MCP araç çağrısı seçme/yürütme + sonucu özetleme | Evet (özet için) | `src/agents/tools/mcp_client.py`, `src/agents/workers/tool_agent.py` |
-| `smalltalk_agent` | Kısa sohbet yanıtı | Evet | `src/agents/workers/smalltalk_agent.py` |
+| `rag_agent` | Hibrit (vektör+BM25) retrieval + alıntılı yanıt (geçmişi bağlam olarak kullanır) | Evet | `src/rag/retriever.py`, `src/agents/workers/rag_agent.py` |
+| `tool_agent` | Fake modda deterministik intent→araç eşlemesi; gerçek modda `bind_tools` ile çok-araçlı bir akıl yürütme döngüsü (argüman doğrulamalı) | Evet | `src/agents/tools/mcp_client.py`, `src/agents/workers/tool_agent.py` |
+| `smalltalk_agent` | Kısa sohbet yanıtı (geçmişi bağlam olarak kullanır) | Evet | `src/agents/workers/smalltalk_agent.py` |
 | `escalate_agent` | İnsana aktarım / kapsam dışı mesajı | Hayır | `src/agents/workers/escalate_agent.py` |
 | `guardrail_agent` | PII redaksiyon, yatırım tavsiyesi engelleme, iterasyon sınırı mesajı | Hayır (bkz. ADR-006) | `src/agents/workers/guardrail_agent.py` |
+| `memory_save` | Bu turu (+ varsa yeni bekleyen slot isteğini) Redis'e/hafızaya yaz | Hayır | `src/agents/memory.py`, `src/agents/workers/memory_agent.py` |
 
 ## Süreç sınırları (process boundaries)
 
@@ -89,19 +93,24 @@ doğrudan çağırır — ayrı bir süreç ayağa kaldırmadan hızlı, determi
 
 ## Ölçeklenebilirlik notları
 
-- API stateless (konuşma geçmişi bu demo'da her istekte istemciden gelir — gerçek bir
-  üründe bu bir oturum/veritabanı katmanına taşınır, bkz. `docs/architecture.md`
-  "Sınırlar"). Bu sayede `k8s/deployment.yaml` + `k8s/hpa.yaml` yatay ölçeklemeyi
-  sorunsuz destekliyor.
+- API süreci kendisi stateless — turlar arası durum (konuşma geçmişi, bekleyen
+  slot-doldurma isteği) `memory_load`/`memory_save` üzerinden Redis'te tutuluyor (bkz.
+  ADR-008), API süreçlerinin belleğinde değil. Bu sayede `k8s/deployment.yaml` +
+  `k8s/hpa.yaml` yatay ölçeklemeyi sorunsuz destekliyor — hangi replikanın isteği
+  aldığı önemli değil, hepsi aynı Redis'i paylaşıyor. `REDIS_URL` boşsa (yerel
+  geliştirme/testler) her replika kendi in-memory dict'ine düşer — o zaman konuşma
+  sürekliliği yalnızca tek bir process içinde garanti.
 - Vektör deposu (Chroma) tek bir `PersistentVolumeClaim` üzerinden paylaşılıyor — birden
   fazla replika aynı salt-okunur bilgi tabanını okuyor. Yazma (ingest) `scripts/seed_vectorstore.py`
   ile ayrı, çevrimdışı bir adım; API süreçleri runtime'da vektör deposuna yazmıyor.
 
 ## Sınırlar (bilinçli, YAGNI kapsamında bırakılan)
 
-- Konuşma geçmişi kalıcı değil (in-memory/istemci taşımalı) — gerçek ürün: Redis/Postgres.
-- `tool_agent` tek turda tek araç çağrısı yapıyor (çok adımlı planlama yok) — grafiğin
-  döngü mekanizması buna hazır, sadece `tool_agent_done=False` bırakmak yeterli olurdu;
-  bu demo kapsamında tek adım yeterli görüldü.
+- Redis'te kalıcılık (persistence) yok — bir konuşma önbelleği, bir veritabanı değil;
+  `CONVERSATION_TTL_SECONDS` zaten unutmayı bekliyor (bkz. ADR-008).
+- `tool_agent`'ın LLM-planlı yolu (ADR-009) tek turn içinde birden çok aracı
+  sıralayabiliyor, ama turlar arası çok adımlı bir plan (örn. "önce bakiyeme bak, düşükse
+  bir uyarı kur") hâlâ yok — grafiğin döngü mekanizması buna hazır, bu demo'nun kapsamı
+  dışında bırakıldı.
 - NER kural tabanlı (regex) — üretimde ek bir istatistiksel/LLM NER katmanı recall'u
   artırır, ama deterministik çekirdek test edilebilirlik için tercih edildi.

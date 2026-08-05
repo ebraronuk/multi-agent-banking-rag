@@ -16,6 +16,52 @@ ile orkestre edilmiş tek bir state machine üzerinde.
 > pratiği** göstermek. Neyin bilinçli olarak basitleştirildiği aşağıda ve
 > [`docs/architecture.md`](docs/architecture.md)'de açıkça belirtiliyor — gizlenmiyor.
 
+## Ne yapar bu sistem?
+
+Kullanıcı `/chat`'e bir mesaj gönderir; sistem mesajı okur, **hangi tür istek olduğuna
+kendi karar verir** ve dört yoldan birine yönlendirir — kullanıcı hangi düğmeye
+basacağını seçmez, hepsi tek bir uç nokta:
+
+| Kullanıcı ne yazarsa | Sistem ne yapar |
+|---|---|
+| "EFT limitiniz ne kadar?" | Bilgi tabanından arar, **kaynak göstererek** cevaplar (RAG) |
+| "Kartımı blokla" | Gerçek bir işlem aracı çağırır (mock banking API) — eksik bilgi varsa **sorar ve hatırlar** |
+| "Merhaba" | Doğal, kısa bir sohbet yanıtı verir |
+| "Yarın hava nasıl olacak?" | Kapsam dışı olduğunu söyler / insana yönlendirir |
+
+### Somut bir senaryo: kartı bloke etmek (uçtan uca, canlı test edildi)
+
+```
+👤  Kartımı blokla
+🤖  Bu işlemi gerçekleştirebilmem için kartınızın son 4 hanesine ihtiyacım var.
+
+👤  4321
+🤖  Kartınızı bloke ettim.
+```
+
+İkinci mesaj tek başına ("4321") hiçbir bağlam olmadan anlamsız bir sayı — sistemin
+bunu "birinci mesajın cevabı" olarak anlayabilmesinin tek nedeni **konuşma hafızası**
+(Redis, `agents/memory.py`): birinci turda "kartı blokla ama hangi kart belli değil"
+bilgisi saklanıyor, ikinci turda bu bilgi geri yükleniyor, "4321"in tam olarak
+beklenen cevap olduğu anlaşılıyor ve `block_card` aracı gerçekten çağrılıyor —
+kullanıcı isteğini tekrar en baştan yazmak zorunda kalmıyor. Ayrıntı: ADR-008.
+
+### Daha karmaşık bir istek (gerçek bir LLM anahtarı bağlıyken)
+
+"Kartımı blokla **ve** bir destek talebi de aç" gibi bileşik bir istekte, model
+`bind_tools` ile hangi araçları hangi sırayla çağıracağına kendisi karar verir (gerçek
+akıl yürütme/planlama) — ama parayı/kartı etkileyen hiçbir aracı, o bilginin
+konuşmada gerçekten geçtiğini doğrulamadan çalıştırmaz (model "9999" gibi bir kart no
+uydurursa reddedilir). Ayrıntı: ADR-009. `LLM_PROVIDER=fake` modunda (anahtarsız) bu
+yol yerine daha basit, deterministik bir eşleme çalışır — ikisi de test edilmiş.
+
+### Kapsam dışı bırakılanlar (bilinçli)
+
+Bu bir **canlı bankacılık sistemi değil** — gerçek para hareket etmez, gerçek bir
+çekirdek bankacılık API'sine bağlanmaz. Amaç, bu tür bir sistemin **mimarisini**
+(çoklu ajan orkestrasyonu, RAG, tool-calling, konuşma hafızası, güvenlik katmanı)
+gerçek, çalışan, test edilmiş kodla göstermek.
+
 ## Neden bu proje
 
 Bankacılık destek konuşmaları tipik olarak birbirinden farklı üç şeyi karıştırır:
@@ -30,16 +76,16 @@ altında ADR formatında.
 
 ```mermaid
 flowchart LR
-    U([kullanıcı]) --> NER[NER] --> INTENT[Intent] --> SUP{Supervisor}
+    U([kullanıcı]) --> MEM[Memory Load] --> NER[NER] --> INTENT[Intent] --> SUP{Supervisor}
     SUP --> RAG[RAG Agent]
-    SUP --> TOOL[Tool Agent<br/>MCP]
+    SUP --> TOOL[Tool Agent<br/>deterministik ya da<br/>LLM-planlı]
     SUP --> CHAT[Smalltalk]
     SUP --> ESC[Escalate]
     RAG --> GUARD[Guardrail]
     TOOL --> GUARD
     CHAT --> GUARD
     ESC --> GUARD
-    GUARD --> R([final_answer])
+    GUARD --> MEMSAVE[Memory Save] --> R([final_answer])
 ```
 
 Detaylı diyagram, süreç sınırları ve ölçeklenebilirlik notları için → [`docs/architecture.md`](docs/architecture.md).
@@ -55,6 +101,8 @@ Detaylı diyagram, süreç sınırları ve ölçeklenebilirlik notları için �
 | Araç çağırma | FastMCP (ayrı süreç) + in-process fallback | Gerçek bir MCP sınırı göstermek + testlerde ağ bağımlılığından kaçınmak ([ADR-005](docs/decisions/ADR-005-mcp-tool-boundary.md)) |
 | Güvenlik | Kural tabanlı guardrail, LLM değil | Guardrail'in kendisi jailbreak edilebilir bir modele bağımlı olmamalı ([ADR-006](docs/decisions/ADR-006-guardrail-not-an-llm-call.md)) |
 | Hata taksonomisi | HTTP hataları sadece gerçekten raise edilenlerle sınırlı; ajan-seviyesi aksamalar 200 + flag | Kullanılmayan bir hata kodu, hiç olmamasından beter ([ADR-007](docs/decisions/ADR-007-error-taxonomy-and-resilience.md)) |
+| Konuşma hafızası | Redis + in-memory fallback, açık "bekleyen slot" takibi | "4321" gibi bağlamsız bir cevabın hangi isteği tamamladığını anlamak ([ADR-008](docs/decisions/ADR-008-conversation-memory-slot-fill.md)) |
+| Araç planlama | Fake modda deterministik eşleme; gerçek modda `bind_tools` akıl yürütme döngüsü + argüman doğrulama | Bileşik istekleri çözerken halüsinasyonlu para/kart işlemine izin vermemek ([ADR-009](docs/decisions/ADR-009-llm-planned-tool-reasoning.md)) |
 
 ## Üretime dönük detaylar (demo kapsamında ama gerçek)
 
@@ -81,12 +129,18 @@ docker compose -f docker/docker-compose.yml up --build
 ```
 
 API `http://localhost:8000`'de ayağa kalkar (`GET /healthz`, `GET /readyz`), MCP araç
-sunucusu `http://localhost:8765`'te. Bilgi tabanını doldurmak için (RAG cevaplarının
+sunucusu `http://localhost:8765`'te, konuşma hafızası için bir Redis (`redis:7-alpine`,
+kalıcılık olmadan — bkz. ADR-008). Bilgi tabanını doldurmak için (RAG cevaplarının
 alıntı yapabilmesi için gerekli):
 
 ```bash
 python scripts/seed_vectorstore.py
 ```
+
+Bilgi tabanı (`data/sample_docs/`), kurgusal DemoBank için 8 kısa Türkçe SSS/politika
+dokümanı: kart engelleme, havale/EFT limitleri, hesap işletim ücretleri, hesap türleri,
+çalışma saatleri, itiraz/şikayet süreci, KVKK/gizlilik notu, şifre/güvenlik önerileri.
+`RAG_QUERY` niyetini denemek için bunlardan herhangi biriyle ilgili bir soru sorun.
 
 Örnek istek:
 
@@ -95,6 +149,34 @@ curl -X POST http://localhost:8000/chat \
   -H "Content-Type: application/json" \
   -d '{"message": "EFT limitiniz ne kadar?"}'
 ```
+
+Örnek yanıt (kısaltılmış — `LLM_PROVIDER=fake` ile, gerçek bir sağlayıcıda `answer`
+daha akıcı olur):
+
+```json
+{
+  "conversation_id": "f8161243-d27a-461d-966f-6944e49aaa3d",
+  "answer": "[fake-llm] response-cc-24-7e-c3: Bağlam:\n[1] Havale/EFT Limitleri: ...",
+  "intent": "RAG_QUERY",
+  "entities": [],
+  "citations": [
+    { "doc_id": "havale-eft-limitleri.md-2", "title": "Havale/EFT Limitleri", "score": 0.67, "snippet": "..." }
+  ],
+  "tool_calls": [],
+  "trace": [
+    { "node": "ner_agent", "summary": "extracted 0 entity(ies)" },
+    { "node": "intent_agent", "summary": "classified as RAG_QUERY (confidence=0.55)" },
+    { "node": "supervisor", "summary": "routing decision for intent=RAG_QUERY" },
+    { "node": "rag_agent", "summary": "answered using 1 citation(s)" },
+    { "node": "guardrail", "summary": "guardrail resolved response (0 flag(s))" }
+  ],
+  "guardrail_flags": [],
+  "iterations": 0
+}
+```
+
+`trace` alanı burada bilerek tam gösterildi — bu API'nin ayırt edici tarafı budur (bkz.
+"API sözleşmesi" altında).
 
 ### Yerel geliştirme (Docker olmadan)
 
@@ -122,6 +204,20 @@ Test piramidi: saf mantık (NER regex'leri, intent kural motoru, guardrail redak
 supervisor routing) birim testle; `/chat` uç noktası + graph wiring entegrasyon testiyle;
 tek bir uçtan-uca "EFT limiti sor → alıntılı yanıt al" akışı e2e testiyle kapsanıyor.
 
+## Değerlendirme (evaluation)
+
+```bash
+make eval   # niyet doğruluğu + retrieval precision@1
+```
+
+`src/evaluation/eval_harness.py`, küçük ve dürüst bir ölçüm — RAGAS değil, elle
+etiketlenmiş 8 (niyet) + 6 (retrieval) örneklik bir set. Amaç mükemmel bir sayı
+göstermek değil, "kalite iddiası ölçülebilir olmalı" fikrinin çalışan bir örneğini
+vermek: niyet sınıflandırması bu sette %100, retrieval ise `EMBEDDING_PROVIDER=fake`
+modunda (API anahtarı yokken) precision@1 ~%50 — bu sınırın nedeni ve gerçek bir
+embedding anahtarıyla neden kalkacağı [ADR-004](docs/decisions/ADR-004-hybrid-retrieval.md)'te
+ölçülmüş bulgu olarak yazılı.
+
 ## API sözleşmesi
 
 `POST /chat` → `ChatResponse` (bkz. `src/schemas/dto.py`): `answer`, `intent`,
@@ -132,12 +228,30 @@ merkezinde, bu yüzden izlenebilirlik sona eklenen bir özellik değil.
 
 ## Sınırlar / sonraki adımlar (bilinçli olarak bu demo kapsamı dışında bırakıldı)
 
-- Konuşma geçmişi kalıcı değil (Redis/Postgres ile oturum yönetimi gerçek ürün için gerekli).
-- `tool_agent` turn başına tek araç çağrısı yapıyor; çok adımlı planlama grafiğin döngü
-  mekanizmasıyla desteklenebilir ama bu demo'da tek adım yeterli görüldü.
+- Konuşma hafızası (Redis) kalıcı değil, bir TTL'le kendiliğinden unutuyor — bir
+  konuşma önbelleği, bir veritabanı değil (bkz. ADR-008).
+- LLM-planlı araç döngüsü (ADR-009) tek turn içinde birden çok aracı sıralayabiliyor,
+  ama turlar arası çok adımlı bir plan (örn. "önce bakiyeme bak, düşükse uyar") yok —
+  grafiğin döngü mekanizması buna hazır, bu demo'da tek turluk planlama yeterli görüldü.
 - LangSmith/Langfuse tracing entegrasyonu bir config anahtarı olarak var (`LANGSMITH_TRACING`)
   ama bu demo'da varsayılan kapalı.
 - Kimlik doğrulama/oturum yok — `/chat` şu an herkese açık; gerçek dağıtım bir
   auth middleware'i gerektirir.
+- Değerlendirme seti küçük ve elle etiketlenmiş (RAGAS gibi bir çerçeve değil) —
+  bilinçli bir kapsam kararı, bkz. "Değerlendirme" bölümü.
+
+## Kubernetes
+
+`k8s/` altında referans amaçlı manifestler var: `deployment.yaml` (2 replika,
+readiness/liveness probe), `service.yaml`, `hpa.yaml` (CPU/memory bazlı
+autoscale), `configmap.yaml`. Bu demo'nun asıl çalıştırma yolu `docker compose`
+(yukarıya bakın); k8s manifestleri gerçek bir clusterda nasıl dağıtılacağının
+somut bir örneği olarak duruyor, CI'da apply edilmiyor.
+
+## Lisans ve proje sağlığı
+
+MIT — bkz. [`LICENSE`](LICENSE). `.pre-commit-config.yaml` (ruff, `make hooks` ile
+kurulur) ve `.github/dependabot.yml` (pip/docker/actions, haftalık) ile bağımlılık
+ve stil kontrolü otomatik.
 
 Ekip için devir notları: [`HANDOFF.md`](HANDOFF.md).

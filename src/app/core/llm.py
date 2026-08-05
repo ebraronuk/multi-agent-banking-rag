@@ -14,6 +14,7 @@ from langchain_core.callbacks.manager import CallbackManagerForLLMRun
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
+from langchain_core.runnables import Runnable
 from pydantic import SecretStr
 
 from app.core.config import LLMProvider, Settings, get_settings
@@ -94,20 +95,38 @@ def is_fake_model(model: BaseChatModel) -> bool:
     return isinstance(model, FakeChatModel)
 
 
-async def safe_ainvoke(llm: BaseChatModel, messages: list[BaseMessage], *, node: str) -> str | None:
-    """Call the LLM and return its text, or None if the call raised.
+async def safe_ainvoke_message(
+    llm: BaseChatModel | Runnable[list[BaseMessage], AIMessage],
+    messages: list[BaseMessage],
+    *,
+    node: str,
+) -> AIMessage | None:
+    """Call the LLM and return the raw `AIMessage`, or None if the call raised.
 
-    `rag_agent`/`smalltalk_agent`/`tool_agent` all funnel their generation
-    call through here rather than each catching provider exceptions
-    themselves: a real Anthropic/OpenAI outage, rate limit, or timeout should
-    degrade this turn's answer (an unset `draft_answer` already flows into
-    `guardrail_agent.py`'s NO_DRAFT_PRODUCED fallback), not 500 the whole
-    `/chat` request. One hardened call site instead of three copies of the
-    same try/except.
+    Accepts a plain `BaseChatModel` or a bound `Runnable` (what
+    `llm.bind_tools(...)` returns — `tool_agent`'s reasoning loop passes one
+    of those) — both share the same `.ainvoke()` contract. Returning the full
+    message (not just `.content`) is what that loop needs: it has to read
+    `.tool_calls`, not only text.
     """
     try:
         response = await llm.ainvoke(messages)
-        return str(response.content)
+        return response if isinstance(response, AIMessage) else AIMessage(content=str(response.content))
     except Exception:
         logger.warning("llm_call_failed", node=node, exc_info=True)
         return None
+
+
+async def safe_ainvoke(llm: BaseChatModel, messages: list[BaseMessage], *, node: str) -> str | None:
+    """Call the LLM and return its text, or None if the call raised.
+
+    `rag_agent`/`smalltalk_agent`/`tool_agent`'s deterministic path all funnel
+    their generation call through here rather than each catching provider
+    exceptions themselves: a real Anthropic/OpenAI outage, rate limit, or
+    timeout should degrade this turn's answer (an unset `draft_answer`
+    already flows into `guardrail_agent.py`'s NO_DRAFT_PRODUCED fallback),
+    not 500 the whole `/chat` request. One hardened call site instead of
+    three copies of the same try/except.
+    """
+    response = await safe_ainvoke_message(llm, messages, node=node)
+    return str(response.content) if response is not None else None

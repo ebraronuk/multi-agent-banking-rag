@@ -13,6 +13,7 @@ from collections.abc import Awaitable, Callable
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from agents.memory import history_to_messages
 from agents.prompts.rag_prompt import RAG_SYSTEM_PROMPT
 from agents.state import GraphState
 from app.core.llm import safe_ainvoke
@@ -38,6 +39,7 @@ def build_rag_node(
             llm,
             [
                 SystemMessage(content=RAG_SYSTEM_PROMPT),
+                *history_to_messages(state.get("history", [])),
                 HumanMessage(content=f"Bağlam:\n{context}\n\nSoru: {state['user_query']}"),
             ],
             node="rag_agent",

@@ -12,6 +12,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.main import app
+from mcp_server.tools.banking_tools import _ACCOUNTS
 
 
 @pytest.fixture
@@ -121,3 +122,46 @@ async def test_metrics_endpoint_exposes_prometheus_format(client: AsyncClient) -
 
     assert response.status_code == 200
     assert "http_requests_total" in response.text
+
+
+async def test_multi_turn_slot_fill_completes_a_card_action_across_two_requests(
+    client: AsyncClient,
+) -> None:
+    """The scenario ADR-008 exists for: a bare follow-up answer, in the same
+    conversation, actually completes the request instead of being treated as
+    a brand-new, unrelated message."""
+    first = await client.post(
+        "/chat", json={"conversation_id": "multi-turn-1", "message": "kartımı blokla"}
+    )
+    assert first.status_code == 200
+    first_body = first.json()
+    assert first_body["intent"] == "CARD_ACTION"
+    assert "tool_calls" not in first_body or first_body["tool_calls"] == []
+    assert any(step["node"] == "memory_save" for step in first_body["trace"])
+
+    second = await client.post(
+        "/chat", json={"conversation_id": "multi-turn-1", "message": "4321"}
+    )
+    assert second.status_code == 200
+    second_body = second.json()
+
+    # "4321" is the real fixture card in mcp_server/tools/banking_tools.py —
+    # picked deliberately (not an arbitrary-looking number) so a real match
+    # in _ACCOUNTS is exercised, not just the entity-synthesis mechanics.
+    # The bare digits alone have no keyword ner_extractor would normally
+    # anchor a CARD_LAST4 match on — this only works because memory_load
+    # carried the pending request from the first turn (see ADR-008).
+    assert second_body["intent"] == "CARD_ACTION"
+    assert len(second_body["tool_calls"]) == 1
+    assert second_body["tool_calls"][0]["tool_name"] == "block_card"
+    assert second_body["tool_calls"][0]["ok"] is True
+
+    node_sequence = [step["node"] for step in second_body["trace"]]
+    assert "memory_load" in node_sequence
+    assert "tool_agent" in node_sequence
+
+    # restore fixture state so this test doesn't leak into others
+    for account in _ACCOUNTS.values():
+        for card in account["cards"]:  # type: ignore[union-attr]
+            if card["last4"] == "4321":
+                card["status"] = "active"

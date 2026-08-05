@@ -10,10 +10,12 @@ services:
     environment:
       - CHROMA_PERSIST_DIR=/data/vectorstore
       - MCP_SERVER_HOST=mcp
+      - REDIS_URL=redis://redis:6379/0
     volumes:
       - vectorstore:/data/vectorstore
     depends_on:
       - mcp
+      - redis
     restart: unless-stopped
 
   mcp:
@@ -33,6 +35,13 @@ services:
       # inside this container's own network namespace — 0.0.0.0 is required
       # for the api container to reach it at all.
       - MCP_SERVER_HOST=0.0.0.0
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    # Conversation memory only — nothing here is worth surviving a crash
+    # (RedisMemory/InMemoryMemory both degrade gracefully on a miss, see
+    # ADR-008), so no persistence volume: an ephemeral cache, not a database.
     restart: unless-stopped
 
 volumes:
