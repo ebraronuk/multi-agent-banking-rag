@@ -1,0 +1,24 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+/* Deliberately no prefers-color-scheme dark override: the chat UI's own
+   components use fixed light-theme colors (see ChatPanel/MessageBubble), so
+   flipping just the page background dark would clash instead of helping. A
+   real dark mode would need every component themed, not just this one. */
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}

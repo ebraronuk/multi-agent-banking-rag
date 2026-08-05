@@ -25,3 +25,4 @@ type: Opaque
 stringData:
   ANTHROPIC_API_KEY: "changeme"
   OPENAI_API_KEY: "changeme"
+  GOOGLE_API_KEY: "changeme"

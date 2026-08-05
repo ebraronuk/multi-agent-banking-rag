@@ -15,6 +15,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class LLMProvider(StrEnum):
     ANTHROPIC = "anthropic"
     OPENAI = "openai"
+    GOOGLE = "google"
     FAKE = "fake"
 
 
@@ -38,6 +39,7 @@ class Settings(BaseSettings):
     llm_provider: LLMProvider = LLMProvider.FAKE
     anthropic_api_key: str | None = None
     openai_api_key: str | None = None
+    google_api_key: str | None = None
     llm_model: str = "claude-sonnet-5"
 
     embedding_provider: EmbeddingProvider = EmbeddingProvider.FAKE
@@ -66,6 +68,15 @@ class Settings(BaseSettings):
     conversation_history_limit: int = Field(default=6, ge=1, le=50)
     conversation_ttl_seconds: int = Field(default=86400, ge=60)
 
+    cors_allowed_origins: str = Field(
+        default="http://localhost:3000",
+        description="Comma-separated list of origins the frontend is served from.",
+    )
+
+    @property
+    def cors_allowed_origins_list(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()]
+
     @property
     def mcp_server_url(self) -> str:
         # "/mcp" is FastMCP's default streamable-HTTP path (`fastmcp.settings.streamable_http_path`)
@@ -82,6 +93,8 @@ class Settings(BaseSettings):
         if self.llm_provider == LLMProvider.ANTHROPIC and not self.anthropic_api_key:
             return LLMProvider.FAKE
         if self.llm_provider == LLMProvider.OPENAI and not self.openai_api_key:
+            return LLMProvider.FAKE
+        if self.llm_provider == LLMProvider.GOOGLE and not self.google_api_key:
             return LLMProvider.FAKE
         return self.llm_provider
 

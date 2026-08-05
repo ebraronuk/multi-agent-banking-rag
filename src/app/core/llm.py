@@ -88,6 +88,17 @@ def get_chat_model(settings: Settings | None = None) -> BaseChatModel:
             max_retries=2,
         )
 
+    if provider == LLMProvider.GOOGLE:
+        from langchain_google_genai import ChatGoogleGenerativeAI
+
+        assert settings.google_api_key is not None
+        return ChatGoogleGenerativeAI(
+            model=settings.llm_model,
+            api_key=SecretStr(settings.google_api_key),
+            timeout=settings.request_timeout_seconds,
+            max_retries=2,
+        )
+
     return FakeChatModel()
 
 

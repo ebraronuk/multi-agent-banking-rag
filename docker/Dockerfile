@@ -30,7 +30,12 @@ USER appuser
 
 EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -fsS http://localhost:8000/healthz || exit 1
+# No HEALTHCHECK here on purpose: this one image backs two different services
+# (api on :8000, mcp on :8765 via a command override in docker-compose.yml) —
+# a single baked-in check can't be correct for both. Each service defines its
+# own `healthcheck:` in docker-compose.yml instead; a check pinned to :8000
+# here would silently report the mcp container unhealthy forever (it did,
+# until this was caught by actually reading `docker inspect` output instead
+# of assuming the default HEALTHCHECK made sense for every command override).
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--app-dir", "src"]

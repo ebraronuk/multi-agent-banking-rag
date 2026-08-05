@@ -17,6 +17,12 @@ services:
       - mcp
       - redis
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/healthz"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
 
   mcp:
     build:
@@ -36,6 +42,17 @@ services:
       # for the api container to reach it at all.
       - MCP_SERVER_HOST=0.0.0.0
     restart: unless-stopped
+    healthcheck:
+      # FastMCP's streamable-HTTP endpoint isn't a plain GET-able health
+      # route — it correctly answers with 406 ("client must accept
+      # text/event-stream") to a bare GET, which is proof the server is up
+      # and routing requests. No `-f`: curl only fails here on an actual
+      # connection error, not on that expected 406.
+      test: ["CMD-SHELL", "curl -sS -o /dev/null http://localhost:8765/mcp"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
 
   redis:
     image: redis:7-alpine

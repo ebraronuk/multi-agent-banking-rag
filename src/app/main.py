@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 from slowapi.errors import RateLimitExceeded
@@ -67,6 +68,17 @@ app = FastAPI(
     description="Reference multi-agent RAG + tool-calling assistant for a retail-banking support domain.",
     version="0.1.0",
     lifespan=lifespan,
+)
+# CORS_ALLOWED_ORIGINS defaults to the frontend's local dev port (frontend/README.md)
+# — a real deployment sets it to the actual deployed frontend origin, never "*"
+# (this API has no auth; an open CORS policy would let any site call it on a
+# visitor's behalf).
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=get_settings().cors_allowed_origins_list,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 app.add_middleware(RequestIdMiddleware)
 app.state.limiter = limiter
