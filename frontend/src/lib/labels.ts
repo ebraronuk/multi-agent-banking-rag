@@ -15,6 +15,8 @@ export const GUARDRAIL_FLAG_LABELS: Record<GuardrailFlag, string> = {
   FINANCIAL_ADVICE_BLOCKED: "Yatırım tavsiyesi engellendi",
   ESCALATED_ITERATION_LIMIT: "İterasyon sınırına ulaşıldı",
   NO_DRAFT_PRODUCED: "Yanıt üretilemedi",
+  PROMPT_INJECTION_DETECTED: "Prompt injection tespit edildi",
+  MODEL_IDENTITY_REDACTED: "Model kimliği gizlendi",
 };
 
 export const EXAMPLE_PROMPTS: string[] = [

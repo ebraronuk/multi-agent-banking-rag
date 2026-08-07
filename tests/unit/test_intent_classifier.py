@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from nlp.intent_classifier import classify_intent_rule_based
+from app.core.llm import FakeChatModel
+from nlp.intent_classifier import classify_intent, classify_intent_rule_based
 from schemas.dto import Entity, EntityType, IntentLabel
 
 
@@ -72,3 +73,14 @@ def test_entity_boost_corroborates_weak_keyword_signal() -> None:
     intent, confidence = classify_intent_rule_based("Kartla ilgili bir şey var 1234", entities)
     assert intent == IntentLabel.CARD_ACTION
     assert confidence == 0.55  # base 0.4 + one boost point * 0.15
+
+
+async def test_classify_intent_fake_model_returns_empty_extra_intents() -> None:
+    # Async sarmalayıcı (classify_intent) fake modelde kural tabanlı yola
+    # düşüyor — üçlü dönüş şeklini (intent, confidence, extra_intents) burada
+    # doğruluyoruz, extra_intents her zaman boş liste.
+    intent, confidence, extra_intents = await classify_intent("merhaba", [], FakeChatModel())
+
+    assert intent == IntentLabel.SMALL_TALK
+    assert confidence > 0.0
+    assert extra_intents == []

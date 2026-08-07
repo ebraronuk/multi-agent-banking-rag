@@ -57,6 +57,14 @@ class GraphState(TypedDict, total=False):
     next_node: str | None
     tool_agent_done: bool
 
+    # Tek mesajda birden fazla, farklı kategoriden niyet varsa (bkz. ADR-012)
+    # intent_agent birincili `intent`'e, gerisini bu kuyruğa yazar. supervisor
+    # aktif niyetin worker'ı bitince kuyruktan bir sonrakini çeker; her geçişin
+    # taslak cevabı collected_drafts'a düşer, hepsi bitince synthesizer birleştirir.
+    extra_intents: list[IntentLabel]
+    collected_drafts: Annotated[list[str], operator.add]
+    worker_pass_done: bool
+
 
 def new_state(conversation_id: str, user_query: str) -> GraphState:
     """Bir konuşmanın tek bir turn'ü için taze bir GraphState kurar.
@@ -84,4 +92,7 @@ def new_state(conversation_id: str, user_query: str) -> GraphState:
         iteration_count=0,
         next_node=None,
         tool_agent_done=False,
+        extra_intents=[],
+        collected_drafts=[],
+        worker_pass_done=False,
     )

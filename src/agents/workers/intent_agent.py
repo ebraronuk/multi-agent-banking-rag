@@ -19,8 +19,29 @@ from collections.abc import Awaitable, Callable
 from langchain_core.language_models.chat_models import BaseChatModel
 
 from agents.state import GraphState
+from agents.supervisor import TOOL_DRIVEN_INTENTS
 from nlp.intent_classifier import classify_intent
-from schemas.dto import AgentTraceStep
+from schemas.dto import AgentTraceStep, IntentLabel
+
+# Zincirlenebilir niyetler: tool_agent'ın işlediği üç kategori + RAG_QUERY +
+# SMALL_TALK ("EFT limitiniz ne kadar, bu arada merhaba" gibi bir selamlama
+# gayet doğal bir ikincil niyet). ESCALATE/OUT_OF_SCOPE dahil değil (bkz.
+# ADR-012) — bir insana aktarım isteği konuşmanın o an bittiği anlamına geliyor.
+_CHAINABLE_INTENTS = frozenset(
+    {*TOOL_DRIVEN_INTENTS, IntentLabel.RAG_QUERY, IntentLabel.SMALL_TALK}
+)
+_MAX_EXTRA_INTENTS = 2
+
+
+def _clean_extra_intents(primary: IntentLabel, raw: list[IntentLabel]) -> list[IntentLabel]:
+    cleaned: list[IntentLabel] = []
+    for candidate in raw:
+        if candidate == primary or candidate in cleaned or candidate not in _CHAINABLE_INTENTS:
+            continue
+        cleaned.append(candidate)
+        if len(cleaned) >= _MAX_EXTRA_INTENTS:
+            break
+    return cleaned
 
 
 def build_intent_node(llm: BaseChatModel) -> Callable[[GraphState], Awaitable[dict[str, object]]]:
@@ -32,6 +53,7 @@ def build_intent_node(llm: BaseChatModel) -> Callable[[GraphState], Awaitable[di
             return {
                 "intent": pending.intent,
                 "intent_confidence": 1.0,
+                "extra_intents": [],
                 "trace": [
                     AgentTraceStep(
                         node="intent_agent",
@@ -40,16 +62,19 @@ def build_intent_node(llm: BaseChatModel) -> Callable[[GraphState], Awaitable[di
                 ],
             }
 
-        intent, confidence = await classify_intent(state["user_query"], entities, llm)
+        intent, confidence, extra_intents_raw = await classify_intent(
+            state["user_query"], entities, llm
+        )
+        extra_intents = _clean_extra_intents(intent, extra_intents_raw)
+        summary = f"classified as {intent} (confidence={confidence:.2f})"
+        if extra_intents:
+            summary += f", extra: {[str(i) for i in extra_intents]}"
+
         return {
             "intent": intent,
             "intent_confidence": confidence,
-            "trace": [
-                AgentTraceStep(
-                    node="intent_agent",
-                    summary=f"classified as {intent} (confidence={confidence:.2f})",
-                )
-            ],
+            "extra_intents": extra_intents,
+            "trace": [AgentTraceStep(node="intent_agent", summary=summary)],
         }
 
     return intent_node

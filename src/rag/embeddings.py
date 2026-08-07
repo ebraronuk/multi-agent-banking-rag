@@ -1,12 +1,10 @@
 """Retrieval pipeline'ın embedding backend'leri.
 
-`FakeHashEmbeddings`, gerçek bir embedding modelinin deterministik, offline,
-sıfır-bağımlılıklı bir yerine geçeni. Tüm sistemin (ingestion, retrieval, RAG
+`FakeHashEmbeddings` Tüm sistemin (ingestion, retrieval, RAG
 ajanı, CI) sıfır API anahtarı ve sıfır ağ erişimiyle uçtan uca çalışabilmesi
 için var. Retrieval kalitesi gerçek bir embedding modelinden açıkça daha
-düşük (eş anlamlılık ya da anlam bilgisi yok, sadece paylaşılan token'lar) —
-bu bilinçli bir tercih, gizlenmiyor. `EMBEDDING_PROVIDER=openai`, hiçbir
-çağıran kodu değiştirmeden gerçek embedding'lere geçiyor.
+düşük (eş anlamlılık ya da anlam bilgisi yok, sadece paylaşılan token'lar)
+`EMBEDDING_PROVIDER=openai`, hiçbir çağıran kodu değiştirmeden gerçek embedding'lere geçiyor.
 """
 
 from __future__ import annotations

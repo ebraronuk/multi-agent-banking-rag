@@ -12,10 +12,9 @@ ile orkestre edilmiş tek bir state machine üzerinde.
 
 > **Bu bir portföy/demo projesidir.** "DemoBank A.Ş." kurgusal bir bankadır; hesap/işlem
 > verisi gerçek bir Postgres'te (bkz. `db/schema.sql`, ADR-010) ya da `DATABASE_URL`
-> yoksa bellek-içi bir fixture'da yaşıyor — ama hiçbir şekilde gerçek bir çekirdek
-> bankacılık sistemine bağlanmıyor. Amaç, gerçek bir üründe kullanılacak kalitede bir
-> **mimari** ve **mühendislik pratiği** göstermek. Neyin bilinçli olarak basitleştirildiği
-> aşağıda ve [`docs/architecture.md`](docs/architecture.md)'de açıkça belirtiliyor — gizlenmiyor.
+> yoksa bellek-içi bir fixture'da yaşıyor, gerçek bir çekirdek bankacılık sistemine
+> bağlanmıyor. Amaç, gerçek bir üründe kullanılacak kalitede bir **mimari** ve
+> **mühendislik pratiği** göstermek. Kapsam sınırları [`docs/architecture.md`](docs/architecture.md)'de.
 
 ## Ne yapar bu sistem?
 
@@ -82,12 +81,19 @@ flowchart LR
     SUP --> TOOL[Tool Agent<br/>deterministik ya da<br/>LLM-planlı]
     SUP --> CHAT[Smalltalk]
     SUP --> ESC[Escalate]
-    RAG --> GUARD[Guardrail]
-    TOOL --> GUARD
-    CHAT --> GUARD
+    RAG --> SUP
+    TOOL --> SUP
+    CHAT --> SUP
+    SUP -.ek niyet varsa.-> ADV[Advance Intent] -.-> SUP
+    SUP -.hepsi bitti, >1 taslak.-> SYN[Synthesizer]
+    SUP --> GUARD[Guardrail]
     ESC --> GUARD
+    SYN --> GUARD
     GUARD --> MEMSAVE[Memory Save] --> R([final_answer])
 ```
+
+Tek mesajda "kartımı blokla ve EFT limitiniz ne kadar" gibi iki farklı niyet varsa, supervisor
+ikisini de sırayla işletip `Synthesizer`'da tek cevaba birleştiriyor — ayrıntı: [ADR-012](docs/decisions/ADR-012-multi-intent-dispatch.md).
 
 Detaylı diyagram, süreç sınırları ve ölçeklenebilirlik notları için → [`docs/architecture.md`](docs/architecture.md).
 
@@ -100,10 +106,11 @@ Detaylı diyagram, süreç sınırları ve ölçeklenebilirlik notları için �
 | LLM/embedding | Anthropic veya OpenAI, **anahtar yoksa deterministik fake'e düşer** | `docker compose up` sıfır konfigürasyonla çalışsın ([ADR-003](docs/decisions/ADR-003-offline-first-fake-providers.md)) |
 | Retrieval | Chroma (vektör) + BM25 rerank | Türkçe finansal terimlerde tam-eşleşme + anlamsal yakınlığı birleştirir ([ADR-004](docs/decisions/ADR-004-hybrid-retrieval.md)) |
 | Araç çağırma | FastMCP (ayrı süreç) + in-process fallback | Gerçek bir MCP sınırı göstermek + testlerde ağ bağımlılığından kaçınmak ([ADR-005](docs/decisions/ADR-005-mcp-tool-boundary.md)) |
-| Güvenlik | Kural tabanlı guardrail, LLM değil | Guardrail'in kendisi jailbreak edilebilir bir modele bağımlı olmamalı ([ADR-006](docs/decisions/ADR-006-guardrail-not-an-llm-call.md)) |
-| Hata taksonomisi | HTTP hataları sadece gerçekten raise edilenlerle sınırlı; ajan-seviyesi aksamalar 200 + flag | Kullanılmayan bir hata kodu, hiç olmamasından beter ([ADR-007](docs/decisions/ADR-007-error-taxonomy-and-resilience.md)) |
+| Güvenlik | Kural tabanlı guardrail (PII redaksiyonu, yatırım tavsiyesi engelleme, prompt injection tespiti, model kimliği sızıntısı engelleme), LLM değil | Guardrail'in kendisi jailbreak edilebilir bir modele bağımlı olmamalı ([ADR-006](docs/decisions/ADR-006-guardrail-not-an-llm-call.md)) |
+| Hata taksonomisi | HTTP hataları sadece gerçekten raise edilenlerle sınırlı; ajan-seviyesi aksamalar 200 + flag | `ErrorCode` her zaman kodun fiilen ürettiği durumları yansıtır ([ADR-007](docs/decisions/ADR-007-error-taxonomy-and-resilience.md)) |
 | Konuşma hafızası | Redis + in-memory fallback, açık "bekleyen slot" takibi | "4321" gibi bağlamsız bir cevabın hangi isteği tamamladığını anlamak ([ADR-008](docs/decisions/ADR-008-conversation-memory-slot-fill.md)) |
 | Araç planlama | Fake modda deterministik eşleme; gerçek modda `bind_tools` akıl yürütme döngüsü + argüman doğrulama | Bileşik istekleri çözerken halüsinasyonlu para/kart işlemine izin vermemek ([ADR-009](docs/decisions/ADR-009-llm-planned-tool-reasoning.md)) |
+| Çoklu-niyet dispatch | Tek mesajda birden fazla farklı niyet varsa (gerçek modda) sırayla işlenir, sonuçlar tek cevapta birleştirilir | Tek-etiketli sınıflandırmanın bileşik istekleri kaybetmesini önlemek, tek-niyetli turlarda sıfır ek maliyetle ([ADR-012](docs/decisions/ADR-012-multi-intent-dispatch.md)) |
 | Bankacılık verisi | Postgres (`accounts`/`cards`/`transactions`) + in-memory fallback | Gerçek parametreli SQL, ama `DATABASE_URL` yoksa CI/lokal geliştirme yine sıfır altyapıyla çalışsın ([ADR-010](docs/decisions/ADR-010-postgres-banking-data.md)) |
 | Varlık çıkarımı (NER) | Regex taban + gerçek modda ek bir LLM geçişi | Regex'in kör olduğu serbest metin (kişi adı vb.) için recall, kesin alanlarda regex'in hızı/kesinliği korunuyor ([ADR-011](docs/decisions/ADR-011-hybrid-ner.md)) |
 
@@ -232,7 +239,7 @@ hangi ajanın çalıştığını ve ne yaptığını sırayla döker — bu demo
 API'nin bir parçası: çoklu ajan sistemlerinde "neden bu yanıt verildi" sorusu debug'ın
 merkezinde, bu yüzden izlenebilirlik sona eklenen bir özellik değil.
 
-## Sınırlar / sonraki adımlar (bilinçli olarak bu demo kapsamı dışında bırakıldı)
+## Sınırlar / sonraki adımlar
 
 - Konuşma hafızası (Redis) kalıcı değil, bir TTL'le kendiliğinden unutuyor — bir
   konuşma önbelleği, bir veritabanı değil (bkz. ADR-008).
@@ -243,8 +250,8 @@ merkezinde, bu yüzden izlenebilirlik sona eklenen bir özellik değil.
   ama bu demo'da varsayılan kapalı.
 - Kimlik doğrulama/oturum yok — `/chat` şu an herkese açık; gerçek dağıtım bir
   auth middleware'i gerektirir.
-- Değerlendirme seti küçük ve elle etiketlenmiş (RAGAS gibi bir çerçeve değil) —
-  bilinçli bir kapsam kararı, bkz. "Değerlendirme" bölümü.
+- Değerlendirme seti küçük ve elle etiketlenmiş, RAGAS gibi bir çerçeve değil —
+  bkz. "Değerlendirme" bölümü.
 - Postgres şeması elle yazılan tek bir `db/schema.sql` — bir migration aracı (Alembic vb.)
   bu demo'nun kapsamı dışında bırakıldı (bkz. ADR-010).
 - LLM tabanlı NER geçişi karakter offset'i vermiyor (`start`/`end` boş kalıyor) —
@@ -257,12 +264,6 @@ readiness/liveness probe), `service.yaml`, `hpa.yaml` (CPU/memory bazlı
 autoscale), `configmap.yaml`. Bu demo'nun asıl çalıştırma yolu `docker compose`
 (yukarıya bakın); k8s manifestleri gerçek bir clusterda nasıl dağıtılacağının
 somut bir örneği olarak duruyor, CI'da apply edilmiyor.
-
-## Gerçek bir dağıtım (Render + Neon + Vercel)
-
-Bu projeyi gerçek bir API anahtarıyla, gerçek bir Postgres'e karşı canlıya almak
-istersen adım adım rehber: [`docs/deployment.md`](docs/deployment.md). Kök
-dizindeki `render.yaml`, `api`/`mcp` servislerinin Render Blueprint tanımı.
 
 ## Lisans ve proje sağlığı
 

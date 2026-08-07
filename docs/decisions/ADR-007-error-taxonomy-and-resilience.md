@@ -25,8 +25,8 @@ yapıyordu — gerçek bir sağlayıcı kesintisi (rate limit, timeout, 5xx) do�
 1. *"Sonuç döndür, exception'a boğma"* — kullanıcının "kartımı bulamadım" demesi
    bir programlama hatası değil, beklenen bir konuşma sonucu; 200 + açıklayıcı
    mesaj + flag, 4xx/5xx'ten daha doğru bir temsil.
-2. *Kullanılmayan bir enum üyesi, hiç üye olmamasından beter* — `ErrorCode`'da
-   asla raise edilmeyen bir kod bırakmak, "bunu ele aldık" yanılsaması yaratır.
+2. *`ErrorCode` yalnızca fiilen raise edilen kodları içerir* — asla raise edilmeyen
+   bir kod bırakmak "bunu ele aldık" yanılsaması yaratır, ilk hata ayıklamada kafa karıştırır.
    `agents/workers/tool_agent.py`, `rag_agent.py`, `smalltalk_agent.py` artık
    `app/core/llm.py::safe_ainvoke` üzerinden çağrı yapıyor: başarısız bir LLM
    çağrısı `draft_answer=None` (veya `tool_agent` için deterministik bir özet)

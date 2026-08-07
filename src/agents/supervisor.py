@@ -28,6 +28,8 @@ NODE_TOOL_AGENT = "tool_agent"
 NODE_SMALLTALK = "smalltalk"
 NODE_ESCALATE = "escalate"
 NODE_GUARDRAIL = "guardrail"
+NODE_ADVANCE_INTENT = "advance_intent"
+NODE_SYNTHESIZER = "synthesizer"
 
 
 def supervisor_node(state: GraphState) -> dict[str, object]:
@@ -50,6 +52,45 @@ def supervisor_node(state: GraphState) -> dict[str, object]:
     }
 
 
+def _finish_only(state: GraphState) -> str:
+    """Zincire devam etme — kalan ek niyetler varsa bile bırak, sadece topla ya da bitir.
+
+    İterasyon limiti tam bu turda dolduysa kullanılıyor: yeni bir niyete
+    geçmek (advance) sınırın amacını boşa çıkarırdı.
+    """
+    if state.get("collected_drafts"):
+        return NODE_SYNTHESIZER
+    return NODE_GUARDRAIL
+
+
+def _advance_or_finish(state: GraphState) -> str:
+    """Aktif niyetin worker'ı işini bitirdi — kuyrukta başka niyet var mı diye bakar."""
+    if state.get("extra_intents"):
+        return NODE_ADVANCE_INTENT
+    return _finish_only(state)
+
+
+def advance_intent_node(state: GraphState) -> dict[str, object]:
+    """Kuyruktaki bir sonraki niyeti aktif yapar, bu pass'in taslağını sentez
+    listesine ekler. LLM'siz, saf bir state geçişi — supervisor_node gibi.
+    """
+    extra = list(state.get("extra_intents", []))
+    next_intent = extra.pop(0)
+    finished_draft = state.get("draft_answer")
+
+    return {
+        "intent": next_intent,
+        "extra_intents": extra,
+        "collected_drafts": [finished_draft] if finished_draft else [],
+        "draft_answer": None,
+        "worker_pass_done": False,
+        "tool_agent_done": False,
+        "trace": [
+            AgentTraceStep(node=NODE_ADVANCE_INTENT, summary=f"advancing to extra intent={next_intent}")
+        ],
+    }
+
+
 def build_supervisor_router(settings: Settings) -> Callable[[GraphState], str]:
     """Bu run'ın iterasyon sınırına bağlı koşullu-kenar fonksiyonunu döner."""
 
@@ -62,19 +103,23 @@ def build_supervisor_router(settings: Settings) -> Callable[[GraphState], str]:
                 logger.warning(
                     "agent_iteration_limit_hit", intent=intent, iteration_count=iteration_count
                 )
-                return NODE_GUARDRAIL
-            if state.get("tool_agent_done"):
-                return NODE_GUARDRAIL
-            return NODE_TOOL_AGENT
+                return _finish_only(state)
+            if not state.get("tool_agent_done"):
+                return NODE_TOOL_AGENT
+            return _advance_or_finish(state)
 
         if intent == IntentLabel.RAG_QUERY:
-            return NODE_RAG_AGENT
+            if not state.get("worker_pass_done"):
+                return NODE_RAG_AGENT
+            return _advance_or_finish(state)
 
         if intent == IntentLabel.SMALL_TALK:
-            return NODE_SMALLTALK
+            if not state.get("worker_pass_done"):
+                return NODE_SMALLTALK
+            return _advance_or_finish(state)
 
         # ESCALATE, OUT_OF_SCOPE ya da sınıflandırılamamış/None bir intent —
-        # hepsi tahmin etmek yerine insana aktarım mesajına düşüyor.
+        # hepsi tahmin etmek yerine insana aktarım mesajına düşüyor, zincire dahil değil.
         return NODE_ESCALATE
 
     return route

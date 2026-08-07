@@ -15,11 +15,14 @@ from langgraph.graph.state import CompiledStateGraph
 from agents.memory import get_conversation_memory
 from agents.state import GraphState
 from agents.supervisor import (
+    NODE_ADVANCE_INTENT,
     NODE_ESCALATE,
     NODE_GUARDRAIL,
     NODE_RAG_AGENT,
     NODE_SMALLTALK,
+    NODE_SYNTHESIZER,
     NODE_TOOL_AGENT,
+    advance_intent_node,
     build_supervisor_router,
     supervisor_node,
 )
@@ -31,6 +34,7 @@ from agents.workers.memory_agent import build_memory_load_node, build_memory_sav
 from agents.workers.ner_agent import build_ner_node
 from agents.workers.rag_agent import build_rag_node
 from agents.workers.smalltalk_agent import build_smalltalk_node
+from agents.workers.synthesizer_agent import build_synthesizer_node
 from agents.workers.tool_agent import build_tool_agent_node
 from app.core.config import Settings
 from app.core.llm import get_chat_model
@@ -67,6 +71,8 @@ def build_graph(settings: Settings) -> CompiledStateGraph:
     graph.add_node(NODE_TOOL_AGENT, tool_agent_node)  # type: ignore[arg-type]
     graph.add_node(NODE_SMALLTALK, build_smalltalk_node(llm))  # type: ignore[arg-type]
     graph.add_node(NODE_ESCALATE, escalate_node)
+    graph.add_node(NODE_ADVANCE_INTENT, advance_intent_node)
+    graph.add_node(NODE_SYNTHESIZER, build_synthesizer_node(llm))  # type: ignore[arg-type]
     graph.add_node(NODE_GUARDRAIL, build_guardrail_node(settings))  # type: ignore[arg-type]
     graph.add_node(NODE_MEMORY_SAVE, build_memory_save_node(memory, settings))  # type: ignore[arg-type]
 
@@ -83,17 +89,22 @@ def build_graph(settings: Settings) -> CompiledStateGraph:
             NODE_TOOL_AGENT: NODE_TOOL_AGENT,
             NODE_SMALLTALK: NODE_SMALLTALK,
             NODE_ESCALATE: NODE_ESCALATE,
+            NODE_ADVANCE_INTENT: NODE_ADVANCE_INTENT,
+            NODE_SYNTHESIZER: NODE_SYNTHESIZER,
             NODE_GUARDRAIL: NODE_GUARDRAIL,
         },
     )
 
-    # rag/smalltalk/escalate are single-shot: they always fall through to the
-    # guardrail. tool_agent is the only node that loops back through the
-    # supervisor, since it may need another pass (see agents/supervisor.py).
-    graph.add_edge(NODE_RAG_AGENT, NODE_GUARDRAIL)
+    # rag/tool_agent/smalltalk üçü de supervisor'a geri dönüyor — kuyrukta
+    # başka bir niyet (extra_intents) bekleyip beklemediğine orada bakılıyor
+    # (bkz. ADR-012). escalate bilinçli olarak zincire dahil değil, doğrudan
+    # guardrail'e düşüyor: bir insana aktarım isteği turu bitiriyor sayılıyor.
+    graph.add_edge(NODE_RAG_AGENT, NODE_SUPERVISOR)
     graph.add_edge(NODE_TOOL_AGENT, NODE_SUPERVISOR)
-    graph.add_edge(NODE_SMALLTALK, NODE_GUARDRAIL)
+    graph.add_edge(NODE_SMALLTALK, NODE_SUPERVISOR)
     graph.add_edge(NODE_ESCALATE, NODE_GUARDRAIL)
+    graph.add_edge(NODE_ADVANCE_INTENT, NODE_SUPERVISOR)
+    graph.add_edge(NODE_SYNTHESIZER, NODE_GUARDRAIL)
     graph.add_edge(NODE_GUARDRAIL, NODE_MEMORY_SAVE)
     graph.add_edge(NODE_MEMORY_SAVE, END)
 

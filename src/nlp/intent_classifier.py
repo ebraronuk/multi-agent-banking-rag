@@ -130,6 +130,7 @@ class _IntentClassification(BaseModel):
 
     intent: IntentLabel
     confidence: float = Field(ge=0.0, le=1.0)
+    extra_intents: list[IntentLabel] = Field(default_factory=list)
 
 
 def classify_intent_rule_based(text: str, entities: list[Entity]) -> tuple[IntentLabel, float]:
@@ -155,11 +156,17 @@ def classify_intent_rule_based(text: str, entities: list[Entity]) -> tuple[Inten
 
 async def classify_intent(
     text: str, entities: list[Entity], llm: BaseChatModel
-) -> tuple[IntentLabel, float]:
+) -> tuple[IntentLabel, float, list[IntentLabel]]:
+    """Birincil niyeti (ve varsa, gerçek modelde, ek niyetleri) döner.
+
+    `extra_intents`, tek mesajda "kartımı blokla ve EFT limitiniz ne kadar"
+    gibi birden fazla, farklı kategoriden isteği ayırt etmek için var (bkz.
+    ADR-012) — kural tabanlı yol bunu hiç üretmiyor, sadece gerçek bir LLM
+    structured output'un bir parçası olarak dönebiliyor.
+    """
     if is_fake_model(llm):
-        # Hash-tabanlı bir fake modele prompt yazmanın hiçbir kazancı yok —
-        # anlamlı hiçbir şekilde structured-output sözleşmesine uyamaz.
-        return classify_intent_rule_based(text, entities)
+        intent, confidence = classify_intent_rule_based(text, entities)
+        return intent, confidence, []
 
     try:
         structured_llm = llm.with_structured_output(_IntentClassification)
@@ -171,7 +178,8 @@ async def classify_intent(
         )
         if not isinstance(result, _IntentClassification):
             raise TypeError(f"unexpected structured output type: {type(result)!r}")
-        return result.intent, result.confidence
+        return result.intent, result.confidence, result.extra_intents
     except Exception:
         logger.warning("intent_llm_classification_failed", text_preview=text[:120], exc_info=True)
-        return classify_intent_rule_based(text, entities)
+        intent, confidence = classify_intent_rule_based(text, entities)
+        return intent, confidence, []

@@ -1,11 +1,13 @@
 import type { Icon } from "@phosphor-icons/react";
 import {
+  ArrowRight,
   Brain,
   ChatCircleDots,
   Database,
   FloppyDisk,
   MagnifyingGlass,
   ShieldCheck,
+  Stack,
   TreeStructure,
   UserSwitch,
   BookOpen,
@@ -51,6 +53,16 @@ export const NODE_META: Record<string, NodeMeta> = {
     label: "Araç Çağırma (MCP)",
     icon: Wrench,
     colorClass: "bg-orange-50 text-orange-700 border-orange-200",
+  },
+  advance_intent: {
+    label: "Sıradaki Niyet",
+    icon: ArrowRight,
+    colorClass: "bg-indigo-50 text-indigo-700 border-indigo-200",
+  },
+  synthesizer: {
+    label: "Yanıt Birleştirme",
+    icon: Stack,
+    colorClass: "bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200",
   },
   smalltalk: {
     label: "Sohbet",

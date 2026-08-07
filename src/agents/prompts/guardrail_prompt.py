@@ -14,3 +14,12 @@ NO_DRAFT_FALLBACK_MESSAGE = (
     "Bu talebi şu an yanıtlayamadım. Sorunuzu farklı bir şekilde iletebilir ya da bir müşteri "
     "temsilcisiyle görüşmek isteyip istemediğinizi belirtebilirsiniz."
 )
+
+PROMPT_INJECTION_MESSAGE = (
+    "Bu talebi bu şekilde işleyemiyorum. Bankacılık işlemlerinizle ilgili sorunuzu ya da "
+    "talebinizi normal bir şekilde yazarsanız yardımcı olabilirim."
+)
+
+MODEL_IDENTITY_MESSAGE = (
+    "Ben DemoBank'ın müşteri asistanıyım, size bankacılık işlemlerinizde yardımcı oluyorum."
+)

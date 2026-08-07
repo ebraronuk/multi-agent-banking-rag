@@ -34,6 +34,7 @@ def build_smalltalk_node(
         )
         return {
             "draft_answer": draft_answer,
+            "worker_pass_done": True,
             "trace": [AgentTraceStep(node="smalltalk", summary="generated conversational reply")],
         }
 

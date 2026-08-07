@@ -11,24 +11,35 @@ arasında akar; her düğüm sadece kendi sahip olduğu alanları günceller (bk
 flowchart TD
     START([kullanıcı mesajı]) --> MEMLOAD[memory_load<br/><i>geçmiş + bekleyen slot'u yükle</i>]
     MEMLOAD --> NER[ner_agent<br/><i>IBAN/tutar/tarih/kart çıkar<br/>+ slot-doldurma sentezi</i>]
-    NER --> INTENT[intent_agent<br/><i>niyet sınıflandır<br/>ya da bekleyeni sürdür</i>]
-    INTENT --> SUP{supervisor<br/><i>intent'e göre yönlendir</i>}
+    NER --> INTENT[intent_agent<br/><i>niyet sınıflandır (+ varsa ek niyetler)<br/>ya da bekleyeni sürdür</i>]
+    INTENT --> SUP{supervisor<br/><i>aktif intent'e göre yönlendir</i>}
 
-    SUP -->|RAG_QUERY| RAG[rag_agent<br/><i>hibrit retrieval + LLM yanıt</i>]
+    SUP -->|RAG_QUERY, ilk pass| RAG[rag_agent<br/><i>hibrit retrieval + LLM yanıt</i>]
     SUP -->|ACCOUNT/TRANSACTION/CARD_ACTION| TOOL[tool_agent<br/><i>deterministik ya da<br/>LLM-planlı araç çağrısı</i>]
-    SUP -->|SMALL_TALK| CHAT[smalltalk_agent]
+    SUP -->|SMALL_TALK, ilk pass| CHAT[smalltalk_agent]
     SUP -->|ESCALATE / OUT_OF_SCOPE / bilinmiyor| ESC[escalate_agent]
 
+    RAG --> SUP
+    CHAT --> SUP
     TOOL -->|tool_agent_done=False<br/>ve iterasyon sınırı aşılmadı| SUP
+    TOOL -->|tool_agent_done=True<br/>ya da sınır aşıldı| SUP
 
-    RAG --> GUARD[guardrail_agent<br/><i>PII redaksiyon, politika kontrolü</i>]
-    TOOL -->|tool_agent_done=True<br/>veya sınır aşıldı| GUARD
-    CHAT --> GUARD
+    SUP -->|aktif pass bitti,<br/>kuyrukta ek niyet var| ADV[advance_intent<br/><i>sıradaki niyeti aktif yap,<br/>taslağı sentez listesine ekle</i>]
+    ADV --> SUP
+    SUP -->|kuyruk boş,<br/>1'den fazla taslak toplandı| SYN[synthesizer<br/><i>taslakları tek cevapta birleştir</i>]
+    SUP -->|kuyruk boş,<br/>tek taslak ya da hiç yok| GUARD[guardrail_agent<br/><i>PII/injection/kimlik/politika kontrolü</i>]
+
+    SYN --> GUARD
     ESC --> GUARD
 
     GUARD --> MEMSAVE[memory_save<br/><i>turu + bekleyen slot'u kaydet</i>]
     MEMSAVE --> END([final_answer + trace])
 ```
+
+Tek mesajda birden fazla, farklı kategoriden niyet varsa (ör. "kartımı blokla ve EFT
+limitiniz ne kadar") `advance_intent`/`synthesizer` döngüsü devreye giriyor — bkz. ADR-012.
+Tek-niyetli turlarda (istatistiksel çoğunluk, ve fake modda her zaman) bu iki düğüm hiç
+çalışmıyor, `supervisor` doğrudan `guardrail`'e yönlendiriyor.
 
 ## Düğümler ve sorumlulukları
 
@@ -42,7 +53,9 @@ flowchart TD
 | `tool_agent` | Fake modda deterministik intent→araç eşlemesi; gerçek modda `bind_tools` ile çok-araçlı bir akıl yürütme döngüsü (argüman doğrulamalı) | Evet | `src/agents/tools/mcp_client.py`, `src/agents/workers/tool_agent.py` |
 | `smalltalk_agent` | Kısa sohbet yanıtı (geçmişi bağlam olarak kullanır) | Evet | `src/agents/workers/smalltalk_agent.py` |
 | `escalate_agent` | İnsana aktarım / kapsam dışı mesajı | Hayır | `src/agents/workers/escalate_agent.py` |
-| `guardrail_agent` | PII redaksiyon, yatırım tavsiyesi engelleme, iterasyon sınırı mesajı | Hayır (bkz. ADR-006) | `src/agents/workers/guardrail_agent.py` |
+| `advance_intent` | Kuyruktaki bir sonraki ek niyeti aktif yapar, bitmiş taslağı sentez listesine ekler (bkz. ADR-012) | Hayır — saf state geçişi | `src/agents/supervisor.py::advance_intent_node` |
+| `synthesizer` | Birden fazla niyetten toplanan taslakları tek, doğal bir cevapta birleştirir | Fake modda hayır (art arda ekleme), gerçek modda evet | `src/agents/workers/synthesizer_agent.py` |
+| `guardrail_agent` | PII redaksiyon, yatırım tavsiyesi engelleme, prompt injection tespiti, model kimliği sızıntısı engelleme, iterasyon sınırı mesajı | Hayır (bkz. ADR-006) | `src/agents/workers/guardrail_agent.py` |
 | `memory_save` | Bu turu (+ varsa yeni bekleyen slot isteğini) Redis'e/hafızaya yaz | Hayır | `src/agents/memory.py`, `src/agents/workers/memory_agent.py` |
 
 ## Süreç sınırları (process boundaries)
@@ -114,9 +127,10 @@ süreç ayağa kaldırmadan hızlı, deterministik testler için. `DATABASE_URL`
 - Redis'te kalıcılık (persistence) yok — bir konuşma önbelleği, bir veritabanı değil;
   `CONVERSATION_TTL_SECONDS` zaten unutmayı bekliyor (bkz. ADR-008).
 - `tool_agent`'ın LLM-planlı yolu (ADR-009) tek turn içinde birden çok aracı
-  sıralayabiliyor, ama turlar arası çok adımlı bir plan (örn. "önce bakiyeme bak, düşükse
-  bir uyarı kur") hâlâ yok — grafiğin döngü mekanizması buna hazır, bu demo'nun kapsamı
-  dışında bırakıldı.
+  sıralayabiliyor, çoklu-niyet dispatch (ADR-012) de farklı kategorilerden BAĞIMSIZ
+  istekleri aynı turda birleştiriyor — ama "önce bakiyeme bak, düşükse bir uyarı kur"
+  gibi, bir isteğin SONUCUNUN diğerinin girdisi olduğu çok adımlı bir plan hâlâ yok;
+  her niyet pass'i birbirinden bağımsız çalışıyor.
 - NER'de LLM geçişi karakter offset'i vermiyor, sadece regex'in bulamadıklarını ekliyor
   (bkz. ADR-011) — tam bir istatistiksel NER modelinin yerini almıyor.
 - Postgres şeması elle yazılan tek bir `.sql` dosyası — bir migration aracı (Alembic vb.)

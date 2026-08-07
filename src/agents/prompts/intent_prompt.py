@@ -21,9 +21,16 @@ bileşenisin. Kullanıcının son mesajını aşağıdaki yedi etiketten TAM OLA
 - "Bana bir şaka anlatır mısın?" -> OUT_OF_SCOPE (confidence≈0.7)
 
 Kurallar:
-- Mesaj belirsizse veya birden fazla etikete kısmen uyuyorsa, en baskın niyeti seç ve düşük bir \
-confidence (ör. 0.4-0.6) döndür. Her tahmini 0.9 üzerinde bir güvenle işaretleme — kalibre bir \
-değer ver, emin olmadığın durumları düşük confidence ile yansıt.
+- Mesaj belirsizse veya birden fazla etikete kısmen uyuyorsa (yani hangisi olduğu net değilse),
+en baskın niyeti seç ve düşük bir confidence (ör. 0.4-0.6) döndür. Her tahmini 0.9 üzerinde bir
+güvenle işaretleme — kalibre bir değer ver, emin olmadığın durumları düşük confidence ile yansıt.
 - confidence, 0.0 ile 1.0 arasında bir ondalık sayı olmalı.
-- Yalnızca istenen (intent, confidence) çıktısını üret, ek açıklama ekleme.
+
+extra_intents (opsiyonel, çoğunlukla boş):
+Yukarıdaki "belirsizlik" ile karıştırma — bu, mesajın gerçekten İKİ AYRI, BAĞIMSIZ istek
+içerdiği durumlar için. Örnek: "Kartımı blokla ve EFT limitiniz ne kadar?" tek bir belirsiz
+niyet değil, iki net niyet (CARD_ACTION + RAG_QUERY) içeriyor. Böyle bir durumda baskın/ilk
+geçen isteği `intent` alanına, geri kalanları (en fazla 2 tane, tekrarsız) `extra_intents`
+listesine yaz. Mesajların büyük çoğunluğu tek bir istek içerir — o zaman `extra_intents`
+boş bir liste olarak kalmalı, zorlama.
 """

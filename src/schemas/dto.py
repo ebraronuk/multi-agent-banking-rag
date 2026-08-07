@@ -37,6 +37,8 @@ class GuardrailFlag(StrEnum):
     FINANCIAL_ADVICE_BLOCKED = "FINANCIAL_ADVICE_BLOCKED"
     ESCALATED_ITERATION_LIMIT = "ESCALATED_ITERATION_LIMIT"
     NO_DRAFT_PRODUCED = "NO_DRAFT_PRODUCED"
+    PROMPT_INJECTION_DETECTED = "PROMPT_INJECTION_DETECTED"
+    MODEL_IDENTITY_REDACTED = "MODEL_IDENTITY_REDACTED"
 
 
 class EntityType(StrEnum):
@@ -91,13 +93,13 @@ class ChatMessage(BaseModel):
 class PendingEntityRequest(BaseModel):
     """`tool_agent`, eksik bir varlık yüzünden bir turn'ü kısa devre yaptırdığında
     (ör. kartın son 4 hanesini sorduğunda) set edilir ve `memory_agent`
-    tarafından kalıcı hale getirilir ki *bir sonraki* turn — genelde sadece
+    tarafından kalıcı hale getirilir ki *bir sonraki* turn genelde sadece
     "1234", ner_extractor'ın normalde gerektireceği bir anahtar kelime olmadan
     — sıfırdan yeniden sınıflandırılmak yerine bu isteği tamamlıyor olarak
-    anlaşılsın. Bkz. ADR-008.
+    anlaşılsın.  ADR-008.
 
     `original_message`, asıl *neden*i açıklayan isteği tutuyor ("kartımı
-    blokla, çalındı") — bu olmasaydı, tamamlanmış bir slot-doldurma çıplak
+    blokla, çalındı")  bu olmasaydı, tamamlanmış bir slot-doldurma çıplak
     takip cevabını ("4321") `block_card`'ın `reason` argümanı olarak
     kullanırdı — doğru ama kullanıcıya geri okununca anlamsız.
     """
@@ -134,11 +136,11 @@ class ErrorCode(StrEnum):
     """Sadece HTTP seviyesindeki hata kodları.
 
     Ajan-seviyesi "hatalar" (iterasyon limitine ulaşma, guardrail'in bir
-    cevabı engellemesi, boş dönen bir araç çağrısı) bilinçli olarak bu enum'da
-    DEĞİL — ADR-006 ve "beklenen sonuçlar için raise etme, bir sonuç döndür"
-    prensibine göre, `GuardrailFlag` taşıyan başarılı `ChatResponse`'lar olarak
-    modelleniyorlar. Hiç raise edilmeyen bir enum üyesi, hiç üye olmamasından
-    beter — kodun tutmadığı bir davranış iddiası.
+    cevabı engellemesi, boş dönen bir araç çağrısı) bu enum'da yok — ADR-006'daki
+    "beklenen sonuçlar için raise etme, bir sonuç döndür" prensibine göre,
+    `GuardrailFlag` taşıyan başarılı `ChatResponse`'lar olarak modelleniyorlar.
+    Burada listelenen her üye kodda gerçekten bir yerde raise ediliyor —
+    aksi halde ilk hata ayıklamada "bu zaten ele alınmış" yanılsaması yaratır.
     """
 
     VALIDATION_ERROR = "VALIDATION_ERROR"

@@ -28,5 +28,5 @@ düşmesi (bkz. `agents/workers/tool_agent.py` docstring'i).
 - ✅ `git clone` → `docker compose up` → çalışan bir demo, sıfır konfigürasyon.
 - ✅ CI hiçbir API anahtarı/ağ bağımlılığı olmadan gerçek kodu (mock değil, gerçek graph)
   çalıştırıyor.
-- ❌ Fake modda RAG/intent/NER yanıt *kalitesi* gerçek bir modelinkinden çok daha zayıf —
-  bu bilinçli bir trade-off, gizlenmiyor: README'de ve `.env.example`'da açıkça belirtiliyor.
+- ❌ Fake modda RAG/intent/NER yanıt *kalitesi* gerçek bir modelinkinden çok daha zayıf;
+  bu fark README'de ve `.env.example`'da belirtiliyor.

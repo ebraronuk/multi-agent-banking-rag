@@ -49,6 +49,8 @@ async def test_policy_question_returns_a_grounded_citation(seeded_client: AsyncC
         "intent_agent",
         "supervisor",
         "rag_agent",
+        "supervisor",  # rag_agent bitince supervisor'a döner — kuyrukta ek niyet
+        # yoksa (fake modda hiç olmuyor) doğrudan guardrail'e düşer (ADR-012).
         "guardrail",
         "memory_save",
     ]

@@ -48,6 +48,7 @@ def build_rag_node(
         return {
             "retrieved_docs": citations,
             "draft_answer": draft_answer,
+            "worker_pass_done": True,
             "trace": [
                 AgentTraceStep(
                     node="rag_agent", summary=f"answered using {len(citations)} citation(s)"

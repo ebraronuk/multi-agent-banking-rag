@@ -171,9 +171,9 @@ def synthesize_bare_answer_entity(
     "1234" gibi bir takip cevabının yakınında `nlp/ner_extractor.py`'nin
     regex'lerinin anchor'lanacağı bir "kart" kelimesi yok — tek başına
     okunduğunda bu sorun değil, ama önceki turn'ün tam olarak bunu beklediğini
-    bildiğimizde yanlış olur. Bilinçli olarak dar tutuldu (tam uzunlukta rakam
-    dizisi, IBAN kalıbı) — "kısa her cevap" gibi geniş bir tahmin, yanlış bir
-    bankacılık işlemini sessizce tetikleyebilirdi; bu, tekrar sormaktan beter.
+    bildiğimizde yanlış olur. Kalıp dar tutuldu (tam uzunlukta rakam dizisi,
+    IBAN kalıbı) — "kısa her cevap" gibi geniş bir eşleşme, yanlış bir
+    bankacılık işlemini sessizce tetikler; kullanıcıya tekrar sormak daha güvenli.
     """
     stripped = text.strip()
 

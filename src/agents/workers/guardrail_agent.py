@@ -14,7 +14,9 @@ from collections.abc import Callable
 from agents.prompts.guardrail_prompt import (
     FINANCIAL_ADVICE_DISCLAIMER,
     ITERATION_LIMIT_MESSAGE,
+    MODEL_IDENTITY_MESSAGE,
     NO_DRAFT_FALLBACK_MESSAGE,
+    PROMPT_INJECTION_MESSAGE,
 )
 from agents.state import GraphState
 from app.core.config import Settings
@@ -34,6 +36,45 @@ _ADVICE_KEYWORDS = (
     "şunu yatırım yap",
     "garanti getiri",
     "kesin kazanç",
+)
+
+# Kullanıcının mesajında aranıyor (LLM'in çıktısında değil) — amaç modele
+# ulaşmadan, hâlâ kural tabanlı bir katmanda şüpheli girdiyi yakalamak.
+# Liste tüketici değil; yeni bir kalıp görüldükçe genişletilecek bir başlangıç.
+_INJECTION_KEYWORDS = (
+    "ignore previous instructions",
+    "ignore all previous",
+    "disregard the above",
+    "disregard previous instructions",
+    "önceki talimatları yok say",
+    "önceki talimatları unut",
+    "talimatlarını unut",
+    "kurallarını unut",
+    "sistem promptunu göster",
+    "sistem promptunu yazdır",
+    "system prompt'unu göster",
+    "you are now",
+    "developer mode",
+    "dan modu",
+    "jailbreak",
+)
+
+# LLM'in kendi kimliğini açık etmesi — banka asistanı kimliğinin dışına
+# çıkıp hangi sağlayıcı/modelle çalıştığını söylemesi hem gereksiz bir bilgi
+# sızıntısı hem de marka tutarlılığı sorunu.
+_MODEL_IDENTITY_KEYWORDS = (
+    "google gemini",
+    "gemini modeli",
+    "openai",
+    "gpt-4",
+    "gpt-3",
+    "chatgpt",
+    "anthropic",
+    "claude modeli",
+    "bir dil modeliyim",
+    "bir yapay zeka modeliyim",
+    "large language model",
+    "büyük dil modeliyim",
 )
 
 
@@ -59,6 +100,16 @@ def _contains_advice_language(text: str) -> bool:
     return any(keyword in lowered for keyword in _ADVICE_KEYWORDS)
 
 
+def _contains_injection_attempt(text: str) -> bool:
+    lowered = text.lower()
+    return any(keyword in lowered for keyword in _INJECTION_KEYWORDS)
+
+
+def _reveals_model_identity(text: str) -> bool:
+    lowered = text.lower()
+    return any(keyword in lowered for keyword in _MODEL_IDENTITY_KEYWORDS)
+
+
 def build_guardrail_node(settings: Settings) -> Callable[[GraphState], dict[str, object]]:
     def guardrail_node(state: GraphState) -> dict[str, object]:
         flags: list[GuardrailFlag] = list(state.get("guardrail_flags", []))
@@ -71,12 +122,21 @@ def build_guardrail_node(settings: Settings) -> Callable[[GraphState], dict[str,
         if iteration_count >= settings.max_agent_iterations and tool_agent_pending:
             final_answer = ITERATION_LIMIT_MESSAGE
             flags.append(GuardrailFlag.ESCALATED_ITERATION_LIMIT)
+        elif _contains_injection_attempt(state.get("user_query", "")):
+            # Kullanıcının mesajına bakıyor, draft'a değil — LLM'e hiç
+            # ulaşmadan reddediyoruz, modelin girdiyi nasıl yorumladığına
+            # güvenmeden.
+            final_answer = PROMPT_INJECTION_MESSAGE
+            flags.append(GuardrailFlag.PROMPT_INJECTION_DETECTED)
         elif not draft:
             final_answer = NO_DRAFT_FALLBACK_MESSAGE
             flags.append(GuardrailFlag.NO_DRAFT_PRODUCED)
         elif _contains_advice_language(draft):
             final_answer = FINANCIAL_ADVICE_DISCLAIMER
             flags.append(GuardrailFlag.FINANCIAL_ADVICE_BLOCKED)
+        elif _reveals_model_identity(draft):
+            final_answer = MODEL_IDENTITY_MESSAGE
+            flags.append(GuardrailFlag.MODEL_IDENTITY_REDACTED)
         else:
             final_answer, was_redacted = _redact_sensitive_numbers(draft)
             if was_redacted:

@@ -26,7 +26,9 @@ export type GuardrailFlag =
   | "PII_REDACTED"
   | "FINANCIAL_ADVICE_BLOCKED"
   | "ESCALATED_ITERATION_LIMIT"
-  | "NO_DRAFT_PRODUCED";
+  | "NO_DRAFT_PRODUCED"
+  | "PROMPT_INJECTION_DETECTED"
+  | "MODEL_IDENTITY_REDACTED";
 
 export interface Entity {
   type: EntityType;
