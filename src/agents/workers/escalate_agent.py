@@ -1,38 +1,33 @@
 """IntentLabel.ESCALATE ve IntentLabel.OUT_OF_SCOPE'u işler.
 
-Bilinçli olarak LLM'siz — bkz. ADR-013. Bir insana aktarım, tek bir statik
+Bilinçli olarak LLM'siz (bkz. ADR-013) — bir insana aktarım, tek bir statik
 mesaj değil, script'li bir akış: aktarım+temsilci karşılaması+kimlik
-doğrulama isteği TEK bir turda (`verifying`) -> doğrulama başarılı, sorunu
+doğrulama isteği tek bir turda (`verifying`) -> doğrulama başarılı, sorunu
 sor (`awaiting_issue`) -> sorunu kaydet, somut bir süre ver (`resolved`) ->
-(kapanış, `None`'a döner). Aşama `agents/memory.py` üzerinden turlar arası
+kapanış (`None`'a döner). Aşama `agents/memory.py` üzerinden turlar arası
 taşınıyor (`carried_escalation_stage` bu turun girdisi, `escalation_stage`
 çıktısı).
 
-Aktarım + karşılama + doğrulama isteği tek turda birleşik: kullanıcı "bir
-temsilciyle görüşmek istiyorum" dedikten sonra ayrı bir "merhaba nasıl
-yardımcı olabilirim" turu beklemek hem gereksiz bir round-trip hem de gerçek
-bir sohbette garip durur (canlıda görüldü — kullanıcı bu yüzden şikayetini
-iki kez yazmak zorunda kaldı). Sorun da SADECE BİR KEZ, doğrulamadan sonra
-soruluyor — gerçek bir banka desteğinin de yaptığı gibi önce kimlik, sonra
-konu.
+Aktarım + karşılama + doğrulama isteği tek turda birleşik: ayrı bir
+"merhaba, nasıl yardımcı olabilirim" turu beklemek hem gereksiz bir
+round-trip hem de kullanıcının hemen ardından yazdığı mesajı (genelde
+şikayetin kendisi) görmezden bırakıyordu. Sorun da sadece bir kez,
+doğrulamadan sonra soruluyor — gerçek bir banka desteğinin de yaptığı gibi
+önce kimlik, sonra konu.
 
-`escalation_stage` aktifken (`verifying`/`awaiting_issue`/`resolved`) bu
-düğümün döndürdüğü `intent` her zaman `ESCALATE` — o turda sınıflandırıcının
-ne düşündüğü önemli değil (`supervisor.py` zaten sınıflandırmaya bakmadan
-buraya yönlendiriyor), ama API'nin rapor ettiği `intent` alanı tutarsız
-olmasın diye (canlıda görüldü: Aylin'in mesajının altında "KAPSAM DIŞI"
-etiketi çıkıyordu, çünkü o turun ham sınıflandırması OUT_OF_SCOPE'du).
+`escalation_stage` aktifken bu düğümün döndürdüğü `intent` her zaman
+`ESCALATE` — o turun ham sınıflandırması API'nin `intent` alanına sızmıyor
+(aksi halde Aylin'in mesajının altında yanlış bir etiket görünebiliyordu).
+`supervisor.py` da script aktifken sınıflandırmaya bakmadan doğrudan buraya
+yönlendiriyor — bir LLM'in "aktarım yapıldı mı" gibi bir mesajı yanlış
+sınıflandırıp (ör. "aktarım" kelimesinin iki anlamı yüzünden
+TRANSACTION_ACTION sanıp) akışı atlaması artık mümkün değil.
 
-Bunu bir LLM'e ürettirmek yanlış olurdu: (1) modelin bankanın tutamayacağı
-bir vaadi doğaçlaması, (2) canlıda görülen gerçek bir hata — "aktarım yapıldı
-mı" gibi bir takip sorusu bir LLM tarafından yanlış sınıflandırılıp akışı
-atlayabiliyordu.
-
-Dürüstlük notu: burada gerçek bir insan asla bağlanmıyor. "Aylin" script'li,
-sabit bir persona — bir LLM'in doğaçladığı biri değil. Bu bir portföy
-demosu; amaç gerçek bir canlı-destek entegrasyonunu taklit etmek değil, tam
-bir aktarım/doğrulama/çözüm UX akışının sahte bir vaat üretmeden nasıl
-modelleneceğini göstermek.
+LLM'siz olmasının sebebi bu yüzden çift: modelin bankanın tutamayacağı bir
+vaadi doğaçlaması riski (ADR-006/ADR-009 ile aynı ilke), ve yukarıdaki
+yanlış-sınıflandırma riski. Gerçek bir insan hiçbir aşamada bağlanmıyor —
+"Aylin" script'li, sabit bir persona; bu bir portföy demosu, gerçek bir
+müşteri hizmetleri kuyruğu yok.
 """
 
 from __future__ import annotations

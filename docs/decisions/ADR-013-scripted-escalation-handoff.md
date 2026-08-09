@@ -75,15 +75,12 @@ demo olduğu ve herhangi bir 4 haneli numaranın kabul edildiği açıkça belir
 (`ChatPanel.tsx`, chat dışında statik bir not — sohbetin kendisine, bir mesaj olarak
 değil).
 
-## Dürüstlük notu
-
-Burada gerçek bir insan asla bağlanmıyor. "Aylin" script'li, sabit bir persona — bir LLM'in
-o an doğaçladığı biri değil, tıpkı diğer tüm mesajların da önceden yazılmış olması gibi.
-Bu ayrım önemli: ADR-006'nın guardrail için reddettiği risk ("bir modelin ne söyleyeceğini
-tahmin edememe") burada da geçerli olurdu eğer "Aylin"in repliklerini bir LLM üretiyor
-olsaydı. Amaç gerçek bir canlı-destek entegrasyonunu taklit etmek değil — bu bir portföy
-projesi, gerçek bir müşteri hizmetleri kuyruğu yok — tam bir aktarım/doğrulama/çözüm UX
-akışının sahte bir vaat üretmeden nasıl modelleneceğini göstermek.
+Gerçek bir insan hiçbir aşamada bağlanmıyor — "Aylin" script'li, sabit bir persona, tıpkı
+diğer tüm mesajlar gibi önceden yazılmış, bir LLM'in o an doğaçladığı biri değil. Repliklerini
+bir LLM üretseydi ADR-006'nın guardrail için reddettiği aynı risk (modelin ne söyleyeceğinin
+tahmin edilememesi) burada da geçerli olurdu. Bu bir portföy projesi, gerçek bir müşteri
+hizmetleri kuyruğu yok — amaç tam bir aktarım/doğrulama/çözüm UX akışının sahte bir vaat
+üretmeden nasıl modelleneceğini göstermek.
 
 ## Sonuçlar
 
