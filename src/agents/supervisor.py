@@ -98,6 +98,26 @@ def build_supervisor_router(settings: Settings) -> Callable[[GraphState], str]:
         intent = state.get("intent")
         iteration_count = state.get("iteration_count", 0)
 
+        # Konuşma zaten insana aktarım akışının ortasındaysa (bkz. ADR-013),
+        # sınıflandırıcıya güvenmiyoruz. Somut kanıt: canlıda "aktarım yapıldı
+        # mı" gerçek bir LLM tarafından TRANSACTION_ACTION sanıldı ("aktarım"
+        # kelimesinin iki anlamı yüzünden) ve akış tamamen atlanıp kendi
+        # kafasından bir yanıt uyduruldu.
+        #
+        # TEK istisna: doğrulama bittikten sonra (`awaiting_issue`) kullanıcı
+        # gerçekten cevaplanabilir bir bilgi sorusu sorarsa (RAG_QUERY),
+        # `escalate_node` (LLM'siz, bkz. ADR-006/ADR-013) bunu cevaplayamaz —
+        # tek yapabildiği "bu konuyu kaydettim" demek, ki bu da canlıda
+        # görüldü: "EFT limitim ne kadar" gibi anında cevaplanabilecek bir
+        # soruya anlamsızca "kaydettim, 24 saat içinde dönüş yapacağız"
+        # cevabı veriyordu. `rag_agent` gerçekten cevaplayabiliyorsa
+        # bekletmenin bir anlamı yok. `verifying` aşamasında bu istisna
+        # yok — kimlik doğrulanmadan hiçbir soru script'i atlayamıyor.
+        stage = state.get("carried_escalation_stage")
+        rag_can_answer_instead = stage == "awaiting_issue" and intent == IntentLabel.RAG_QUERY
+        if stage is not None and not rag_can_answer_instead:
+            return NODE_ESCALATE
+
         if intent in TOOL_DRIVEN_INTENTS:
             if iteration_count >= settings.max_agent_iterations:
                 logger.warning(

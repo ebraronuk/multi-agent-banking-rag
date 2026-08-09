@@ -36,6 +36,81 @@ def test_routes_small_talk_to_smalltalk() -> None:
     assert route(state) == NODE_SMALLTALK
 
 
+def test_carried_escalation_stage_overrides_intent_classification() -> None:
+    # Regresyon: canlıda "aktarım yapıldı mı" gerçek bir LLM tarafından
+    # TRANSACTION_ACTION olarak sınıflandırıldı ("aktarım" kelimesinin iki
+    # anlamı yüzünden) ve escalate script'ini (bkz. ADR-013) tamamen atladı.
+    # Script bir kez başladıysa (carried_escalation_stage None değilse) o
+    # turda sınıflandırıcı ne derse desin escalate'e gidilmeli — script
+    # doğrulama tamamlanana kadar kesintisiz sürüyor.
+    route = build_supervisor_router(_settings())
+    state = new_state("c1", "aktarım yapıldı mı")
+    state["intent"] = IntentLabel.TRANSACTION_ACTION
+    state["carried_escalation_stage"] = "verifying"
+
+    assert route(state) == NODE_ESCALATE
+
+
+def test_no_carried_escalation_stage_uses_normal_routing() -> None:
+    # Script bitip carried_escalation_stage None'a döndüğünde (doğrulama
+    # tamamlandığında) konuşma normal akışa geri dönüyor.
+    route = build_supervisor_router(_settings())
+    state = new_state("c1", "bakiyem ne kadar")
+    state["intent"] = IntentLabel.ACCOUNT_ACTION
+    state["carried_escalation_stage"] = None
+
+    assert route(state) == NODE_TOOL_AGENT
+
+
+def test_verifying_stage_forces_escalate_even_for_rag_query() -> None:
+    # Kimlik doğrulanmadan hiçbir soru script'i atlayamaz — awaiting_issue'daki
+    # RAG_QUERY istisnası (aşağıya bak) burada geçerli değil.
+    route = build_supervisor_router(_settings())
+    state = new_state("c1", "EFT limitiniz ne kadar?")
+    state["intent"] = IntentLabel.RAG_QUERY
+    state["carried_escalation_stage"] = "verifying"
+
+    assert route(state) == NODE_ESCALATE
+
+
+def test_awaiting_issue_stage_lets_a_real_rag_query_through() -> None:
+    # Regresyon: canlıda "awaiting_issue" aşamasında "EFT limitim ne kadar"
+    # gibi anında cevaplanabilecek bir soru bile "bu konuyu kaydettim, 24 saat
+    # içinde dönüş yapacağız" cevabını alıyordu — escalate_node LLM'siz
+    # olduğu için bunu gerçekten cevaplayamıyor, rag_agent cevaplayabiliyor.
+    route = build_supervisor_router(_settings())
+    state = new_state("c1", "EFT limitim ne kadar?")
+    state["intent"] = IntentLabel.RAG_QUERY
+    state["carried_escalation_stage"] = "awaiting_issue"
+    state["worker_pass_done"] = False
+
+    assert route(state) == NODE_RAG_AGENT
+
+
+def test_awaiting_issue_stage_rag_query_finishes_normally_after_answering() -> None:
+    # rag_agent cevapladıktan sonra (worker_pass_done=True) sonsuz döngüye
+    # girmemeli, escalate_node'a da geri dönmemeli — normal RAG_QUERY
+    # akışındaki gibi guardrail'e düşmeli.
+    route = build_supervisor_router(_settings())
+    state = new_state("c1", "EFT limitim ne kadar?")
+    state["intent"] = IntentLabel.RAG_QUERY
+    state["carried_escalation_stage"] = "awaiting_issue"
+    state["worker_pass_done"] = True
+
+    assert route(state) == NODE_GUARDRAIL
+
+
+def test_awaiting_issue_stage_still_escalates_non_rag_intents() -> None:
+    # İstisna sadece RAG_QUERY için — ör. bir CARD_ACTION denemesi hâlâ
+    # escalate_node'a gidip "bu konuyu kaydettim" akışına giriyor.
+    route = build_supervisor_router(_settings())
+    state = new_state("c1", "kartımdan izinsiz para çekilmiş")
+    state["intent"] = IntentLabel.CARD_ACTION
+    state["carried_escalation_stage"] = "awaiting_issue"
+
+    assert route(state) == NODE_ESCALATE
+
+
 def test_routes_unclassified_and_out_of_scope_to_escalate() -> None:
     route = build_supervisor_router(_settings())
 

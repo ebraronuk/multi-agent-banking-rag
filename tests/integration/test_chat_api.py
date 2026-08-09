@@ -87,7 +87,7 @@ async def test_chat_out_of_scope_gets_handoff_message(client: AsyncClient) -> No
     assert response.status_code == 200
     body = response.json()
     assert body["intent"] == "OUT_OF_SCOPE"
-    assert "kapsam" in body["answer"].lower()
+    assert "yardımcı olabilirim" in body["answer"].lower()
 
 
 async def test_every_response_carries_a_request_id_header(client: AsyncClient) -> None:

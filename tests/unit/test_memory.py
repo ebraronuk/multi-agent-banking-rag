@@ -34,6 +34,31 @@ async def test_in_memory_round_trips_turns_and_pending_request() -> None:
     assert context.pending_entity_request == pending
 
 
+async def test_in_memory_round_trips_escalation_stage() -> None:
+    memory = InMemoryMemory()
+
+    await memory.save_turn(
+        "conv-escalated",
+        "insanla konuşmak istiyorum",
+        "sizi aktarıyorum",
+        None,
+        history_limit=6,
+        escalation_stage="handed_off",
+    )
+    context = await memory.load("conv-escalated")
+
+    assert context.escalation_stage == "handed_off"
+
+
+async def test_in_memory_escalation_stage_defaults_to_none_when_not_passed() -> None:
+    memory = InMemoryMemory()
+
+    await memory.save_turn("conv-normal", "bakiyem ne kadar", "1000 TL", None, history_limit=6)
+    context = await memory.load("conv-normal")
+
+    assert context.escalation_stage is None
+
+
 async def test_in_memory_truncates_to_history_limit() -> None:
     memory = InMemoryMemory()
     for i in range(5):

@@ -28,9 +28,11 @@ class ConversationContext:
         self,
         turns: list[ChatMessage] | None = None,
         pending_entity_request: PendingEntityRequest | None = None,
+        escalation_stage: str | None = None,
     ) -> None:
         self.turns = turns or []
         self.pending_entity_request = pending_entity_request
+        self.escalation_stage = escalation_stage
 
 
 def _encode(context: ConversationContext) -> str:
@@ -42,6 +44,7 @@ def _encode(context: ConversationContext) -> str:
                 if context.pending_entity_request
                 else None
             ),
+            "escalation_stage": context.escalation_stage,
         }
     )
 
@@ -52,6 +55,7 @@ def _decode(raw: str) -> ConversationContext:
     return ConversationContext(
         turns=[ChatMessage(**t) for t in data.get("turns", [])],
         pending_entity_request=PendingEntityRequest(**pending_raw) if pending_raw else None,
+        escalation_stage=data.get("escalation_stage"),
     )
 
 
@@ -75,12 +79,14 @@ class InMemoryMemory:
         assistant_message: str,
         pending_entity_request: PendingEntityRequest | None,
         history_limit: int,
+        escalation_stage: str | None = None,
     ) -> None:
         context = await self.load(conversation_id)
         context.turns.append(ChatMessage(role="user", content=user_message))
         context.turns.append(ChatMessage(role="assistant", content=assistant_message))
         context.turns = context.turns[-history_limit:]
         context.pending_entity_request = pending_entity_request
+        context.escalation_stage = escalation_stage
         self._store[conversation_id] = _encode(context)
 
 
@@ -117,6 +123,7 @@ class RedisMemory:
         assistant_message: str,
         pending_entity_request: PendingEntityRequest | None,
         history_limit: int,
+        escalation_stage: str | None = None,
     ) -> None:
         try:
             context = await self.load(conversation_id)
@@ -124,6 +131,7 @@ class RedisMemory:
             context.turns.append(ChatMessage(role="assistant", content=assistant_message))
             context.turns = context.turns[-history_limit:]
             context.pending_entity_request = pending_entity_request
+            context.escalation_stage = escalation_stage
             await self._client.set(
                 self._key(conversation_id), _encode(context), ex=self._ttl_seconds
             )

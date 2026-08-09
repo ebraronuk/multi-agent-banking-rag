@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PaperPlaneTilt } from "@phosphor-icons/react";
 import type { ChatMessageEntry } from "@/lib/types";
 import { ApiError, sendChatMessage } from "@/lib/api";
@@ -19,6 +19,11 @@ export function ChatPanel() {
   const [isSending, setIsSending] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const bottomRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [messages, isSending]);
 
   async function handleSend(text: string): Promise<void> {
     const trimmed = text.trim();
@@ -98,6 +103,7 @@ export function ChatPanel() {
               </div>
             </div>
           )}
+          <div ref={bottomRef} />
         </div>
 
         {error && (
@@ -127,6 +133,10 @@ export function ChatPanel() {
             <PaperPlaneTilt size={18} weight="fill" />
           </button>
         </form>
+        <p className="px-6 pb-3 text-[11px] text-gray-400">
+          Not: insana aktarım sonrası kimlik doğrulama adımında herhangi bir 4 haneli numara
+          kabul edilir (ör. 4321) — demo, gerçek bir müşteri kaydına karşı doğrulanmıyor.
+        </p>
       </div>
 
       <aside className="hidden overflow-y-auto bg-gray-50 px-5 py-5 md:block">

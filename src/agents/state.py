@@ -45,6 +45,16 @@ class GraphState(TypedDict, total=False):
     carried_pending_request: PendingEntityRequest | None
     pending_entity_request: PendingEntityRequest | None
 
+    # Aynı carried_X/X deseni, bu kez bir insana aktarımın hangi adımda
+    # olduğunu taşıyor (bkz. ADR-013): None | "handed_off" | "greeted" |
+    # "verifying". carried_escalation_stage önceki turn'den yüklenen (salt
+    # okunur), escalation_stage bu turn'ün çıktısı — escalate_node set eder,
+    # memory_save bir sonraki turn için kalıcı hale getirir (bkz.
+    # agents/workers/escalate_agent.py). Akış tamamlanınca (doğrulama
+    # başarılı) None'a dönüyor, konuşma normal akışa geri düşüyor.
+    carried_escalation_stage: str | None
+    escalation_stage: str | None
+
     retrieved_docs: list[Citation]
     tool_calls: Annotated[list[ToolCallRecord], operator.add]
 
@@ -83,6 +93,8 @@ def new_state(conversation_id: str, user_query: str) -> GraphState:
         history=[],
         carried_pending_request=None,
         pending_entity_request=None,
+        carried_escalation_stage=None,
+        escalation_stage=None,
         retrieved_docs=[],
         tool_calls=[],
         draft_answer=None,

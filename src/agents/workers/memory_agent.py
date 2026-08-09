@@ -24,10 +24,21 @@ def build_memory_load_node(
         summary = f"loaded {len(context.turns)} prior turn(s)"
         if context.pending_entity_request:
             summary += f", pending {context.pending_entity_request.entity_type} for {context.pending_entity_request.intent}"
+        if context.escalation_stage:
+            summary += f", escalation stage={context.escalation_stage}"
 
         return {
             "history": context.turns,
             "carried_pending_request": context.pending_entity_request,
+            "carried_escalation_stage": context.escalation_stage,
+            # Varsayılan bir "değişmezse aynen taşı" değeri — escalate_node
+            # her zaman kendi çıkışında bunu bilinçli olarak overwrite ediyor,
+            # ama `awaiting_issue` sırasında bir RAG_QUERY escalate_node'u
+            # atlayıp rag_agent'a gidiyorsa (bkz. supervisor.py) bu turda
+            # kimse escalation_stage'i set etmez — bu satır olmasa aşama
+            # sessizce kaybolur, bir sonraki turda script hiç başlamamış gibi
+            # davranırdı.
+            "escalation_stage": context.escalation_stage,
             "trace": [AgentTraceStep(node="memory_load", summary=summary)],
         }
 
@@ -44,6 +55,7 @@ def build_memory_save_node(
             assistant_message=state.get("final_answer") or "",
             pending_entity_request=state.get("pending_entity_request"),
             history_limit=settings.conversation_history_limit,
+            escalation_stage=state.get("escalation_stage"),
         )
         return {"trace": [AgentTraceStep(node="memory_save", summary="turn persisted")]}
 
