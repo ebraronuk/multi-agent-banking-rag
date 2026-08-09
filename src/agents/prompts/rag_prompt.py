@@ -19,4 +19,7 @@ Kurallar:
   cevap verme.
 - Kısa, net ve gereksiz tekrardan uzak yaz.
 - Kullanıcı hangi dilde yazdıysa (Türkçe veya İngilizce) yanıtını o dilde ver.
+- Markdown biçimlendirmesi (yıldız, kalın, madde işareti, başlık vb.) kullanma — düz metin
+  yaz. Arayüz markdown render etmiyor, `**önemli**` yazarsan kullanıcı yıldızları olduğu
+  gibi görür.
 """

@@ -15,11 +15,11 @@ from pydantic import Field
 
 from agents.state import new_state
 from agents.tools.mcp_client import InProcessToolClient
-from agents.workers.tool_agent import build_tool_agent_node
+from agents.workers.tool_agent import _format_tool_outcome, build_tool_agent_node
 from app.core.config import Settings
 from app.core.llm import FakeChatModel
 from mcp_server.tools.banking_repository import SEED_ACCOUNTS, InMemoryBankingRepository
-from schemas.dto import Entity, EntityType, IntentLabel
+from schemas.dto import Entity, EntityType, IntentLabel, ToolCallRecord
 
 
 def _settings(max_agent_iterations: int = 6) -> Settings:
@@ -217,3 +217,31 @@ async def test_reasoning_loop_stops_at_max_hops_instead_of_looping_forever() -> 
     assert len(result["tool_calls"]) == 2  # tam olarak max_agent_iterations hop, fazlası değil
     assert result["tool_agent_done"] is True
     assert result["draft_answer"]
+
+
+def test_format_tool_outcome_serializes_dict_result_as_json_not_python_repr() -> None:
+    # Regresyon: özetleme LLM çağrısı başarısız olursa bu, kullanıcının GÖRDÜĞÜ son
+    # çare metni oluyor — Python'ın str()'ı tek tırnaklı bir repr üretirdi
+    # (`{'ok': True, ...}`), canlıda kullanıcıya ham bir Python nesnesi gibi göründü.
+    record = ToolCallRecord(
+        tool_name="get_balance",
+        arguments={"account_id": "TR33..."},
+        result={"account_id": "***1326", "balance": 12450.75},
+        ok=True,
+        latency_ms=1.0,
+    )
+
+    outcome = _format_tool_outcome(record)
+
+    assert "'" not in outcome
+    assert '"balance": 12450.75' in outcome
+
+
+def test_format_tool_outcome_reports_error_when_tool_call_fails() -> None:
+    record = ToolCallRecord(
+        tool_name="get_balance", arguments={}, result=None, ok=False, error="hesap bulunamadı", latency_ms=1.0
+    )
+
+    outcome = _format_tool_outcome(record)
+
+    assert "hesap bulunamadı" in outcome

@@ -10,4 +10,5 @@ Kurallar:
   gerçek bir insanın tek paragrafta ya da birkaç kısa cümlede anlatması gibi yaz.
 - Taslaklardaki teknik/dahili ifadeleri (araç adı, "ok" alanı gibi) tekrarlama.
 - Türkçe, kısa ve net yaz.
+- Markdown biçimlendirmesi kullanma — arayüz render etmiyor, düz metin yaz.
 """

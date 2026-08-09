@@ -108,6 +108,30 @@ def is_fake_model(model: BaseChatModel) -> bool:
     return isinstance(model, FakeChatModel)
 
 
+def content_to_text(content: object) -> str:
+    """`AIMessage.content`'i düz metne çevirir.
+
+    LangChain'de bu alan her zaman `str` değil — bazı Gemini/Anthropic
+    modelleri (özellikle "thought signature"/grounding metadata taşıyan
+    yeni sürümler) `[{"type": "text", "text": "...", "extras": {...}}]`
+    gibi bir içerik-bloğu listesi döndürüyor. Buna körü körüne `str()`
+    çağırmak kullanıcıya ham bir Python repr'i gösterirdi (canlı doğrulandı:
+    `gemini-flash-latest` ile) — burada sadece metin bloklarını çıkarıp
+    birleştiriyoruz.
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict) and isinstance(block.get("text"), str):
+                parts.append(block["text"])
+        return "".join(parts)
+    return str(content)
+
+
 async def safe_ainvoke_message(
     llm: BaseChatModel | Runnable[list[BaseMessage], AIMessage],
     messages: list[BaseMessage],
@@ -124,7 +148,11 @@ async def safe_ainvoke_message(
     """
     try:
         response = await llm.ainvoke(messages)
-        return response if isinstance(response, AIMessage) else AIMessage(content=str(response.content))
+        return (
+            response
+            if isinstance(response, AIMessage)
+            else AIMessage(content=content_to_text(response.content))
+        )
     except Exception:
         logger.warning("llm_call_failed", node=node, exc_info=True)
         return None
@@ -141,4 +169,4 @@ async def safe_ainvoke(llm: BaseChatModel, messages: list[BaseMessage], *, node:
     `/chat` isteğini 500'e düşürmemeli.
     """
     response = await safe_ainvoke_message(llm, messages, node=node)
-    return str(response.content) if response is not None else None
+    return content_to_text(response.content) if response is not None else None

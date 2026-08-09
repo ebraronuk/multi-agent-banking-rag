@@ -20,6 +20,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Awaitable, Callable
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -32,7 +33,7 @@ from agents.prompts.tool_prompt import TOOL_REASONING_SYSTEM_PROMPT, TOOL_RESULT
 from agents.state import GraphState
 from agents.tools.mcp_client import InProcessToolClient, MCPToolClient
 from app.core.config import Settings
-from app.core.llm import is_fake_model, safe_ainvoke, safe_ainvoke_message
+from app.core.llm import content_to_text, is_fake_model, safe_ainvoke, safe_ainvoke_message
 from app.core.logging import get_logger
 from schemas.dto import (
     AgentTraceStep,
@@ -87,8 +88,19 @@ def _build_arguments(tool_name: str, entity_value: str, user_query: str) -> dict
 
 
 def _format_tool_outcome(record: ToolCallRecord) -> str:
+    """Bir araç sonucunu hem LLM'e giden özet isteğinin girdisi hem de (özetleme
+    çağrısı başarısız olursa) kullanıcıya gösterilen son çare olarak kullanılıyor
+    — o yüzden `record.result` bir dict olduğunda Python'ın `str()`'ının ürettiği
+    tek-tırnaklı repr'i (`{'ok': True, ...}`) değil, JSON kullanıyoruz; ikinci
+    durumda kullanıcı ham bir Python nesnesi görmesin diye (canlı doğrulandı).
+    """
     if record.ok:
-        return f"Araç: {record.tool_name}\nSonuç: {record.result}"
+        result = (
+            json.dumps(record.result, ensure_ascii=False)
+            if isinstance(record.result, dict)
+            else record.result
+        )
+        return f"Araç: {record.tool_name}\nSonuç: {result}"
     return f"Araç: {record.tool_name}\nHata: {record.error or 'bilinmeyen hata'}"
 
 
@@ -311,7 +323,7 @@ async def _reasoning_tool_call(
         tool_calls = ai_message.tool_calls[:_MAX_TOOL_CALLS_PER_HOP]
 
         if not tool_calls:
-            final_text = str(ai_message.content)
+            final_text = content_to_text(ai_message.content)
             trace.append(
                 AgentTraceStep(node="tool_agent", summary=f"reasoning loop concluded after {hop} hop(s)")
             )

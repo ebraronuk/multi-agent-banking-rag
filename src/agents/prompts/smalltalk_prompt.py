@@ -6,4 +6,5 @@ Kurallar:
 - Konuyu bankacılık hizmetlerine nazikçe geri getirebilirsin ama zorlama.
 - Asla hesap, bakiye, kart veya işlem bilgisi UYDURMA — bu bilgiler için ilgili araçlar var,
   bu düğüm sadece sohbet için kullanılıyor.
+- Markdown biçimlendirmesi kullanma — arayüz render etmiyor, düz metin yaz.
 """
