@@ -38,8 +38,10 @@ flowchart TD
 
 Tek mesajda birden fazla, farklı kategoriden niyet varsa (ör. "kartımı blokla ve EFT
 limitiniz ne kadar") `advance_intent`/`synthesizer` döngüsü devreye giriyor — bkz. ADR-012.
-Tek-niyetli turlarda (istatistiksel çoğunluk, ve fake modda her zaman) bu iki düğüm hiç
-çalışmıyor, `supervisor` doğrudan `guardrail`'e yönlendiriyor.
+Bu tespit fake modda da çalışıyor (kural tabanlı, `nlp/intent_classifier.py::_rule_based_extra_intents`,
+gerçek moddaki kadar isabetli değil ama anahtarsız da tetiklenebiliyor). Tek-niyetli turlarda
+(istatistiksel çoğunluk) bu iki düğüm hiç çalışmıyor, `supervisor` doğrudan `guardrail`'e
+yönlendiriyor.
 
 ## Düğümler ve sorumlulukları
 
@@ -52,7 +54,7 @@ Tek-niyetli turlarda (istatistiksel çoğunluk, ve fake modda her zaman) bu iki 
 | `rag_agent` | Hibrit (vektör+BM25) retrieval + alıntılı yanıt (geçmişi bağlam olarak kullanır) | Evet | `src/rag/retriever.py`, `src/agents/workers/rag_agent.py` |
 | `tool_agent` | Fake modda deterministik intent→araç eşlemesi; gerçek modda `bind_tools` ile çok-araçlı bir akıl yürütme döngüsü (argüman doğrulamalı) | Evet | `src/agents/tools/mcp_client.py`, `src/agents/workers/tool_agent.py` |
 | `smalltalk_agent` | Kısa sohbet yanıtı (geçmişi bağlam olarak kullanır) | Evet | `src/agents/workers/smalltalk_agent.py` |
-| `escalate_agent` | İnsana aktarım / kapsam dışı mesajı | Hayır | `src/agents/workers/escalate_agent.py` |
+| `escalate_agent` | İnsana aktarım: script'li akış (aktarım+karşılama+doğrulama isteği→sorunu al→SLA ver, bkz. ADR-013) / kapsam dışı mesajı | Hayır | `src/agents/workers/escalate_agent.py` |
 | `advance_intent` | Kuyruktaki bir sonraki ek niyeti aktif yapar, bitmiş taslağı sentez listesine ekler (bkz. ADR-012) | Hayır — saf state geçişi | `src/agents/supervisor.py::advance_intent_node` |
 | `synthesizer` | Birden fazla niyetten toplanan taslakları tek, doğal bir cevapta birleştirir | Fake modda hayır (art arda ekleme), gerçek modda evet | `src/agents/workers/synthesizer_agent.py` |
 | `guardrail_agent` | PII redaksiyon, yatırım tavsiyesi engelleme, prompt injection tespiti, model kimliği sızıntısı engelleme, iterasyon sınırı mesajı | Hayır (bkz. ADR-006) | `src/agents/workers/guardrail_agent.py` |

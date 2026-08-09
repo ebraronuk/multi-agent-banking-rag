@@ -110,7 +110,7 @@ Detaylı diyagram, süreç sınırları ve ölçeklenebilirlik notları için �
 | Hata taksonomisi | HTTP hataları sadece gerçekten raise edilenlerle sınırlı; ajan-seviyesi aksamalar 200 + flag | `ErrorCode` her zaman kodun fiilen ürettiği durumları yansıtır ([ADR-007](docs/decisions/ADR-007-error-taxonomy-and-resilience.md)) |
 | Konuşma hafızası | Redis + in-memory fallback, açık "bekleyen slot" takibi | "4321" gibi bağlamsız bir cevabın hangi isteği tamamladığını anlamak ([ADR-008](docs/decisions/ADR-008-conversation-memory-slot-fill.md)) |
 | Araç planlama | Fake modda deterministik eşleme; gerçek modda `bind_tools` akıl yürütme döngüsü + argüman doğrulama | Bileşik istekleri çözerken halüsinasyonlu para/kart işlemine izin vermemek ([ADR-009](docs/decisions/ADR-009-llm-planned-tool-reasoning.md)) |
-| Çoklu-niyet dispatch | Tek mesajda birden fazla farklı niyet varsa (gerçek modda) sırayla işlenir, sonuçlar tek cevapta birleştirilir | Tek-etiketli sınıflandırmanın bileşik istekleri kaybetmesini önlemek, tek-niyetli turlarda sıfır ek maliyetle ([ADR-012](docs/decisions/ADR-012-multi-intent-dispatch.md)) |
+| Çoklu-niyet dispatch | Tek mesajda birden fazla farklı niyet varsa sırayla işlenir, sonuçlar tek cevapta birleştirilir — fake modda da (kural tabanlı, daha kaba) bir tespit yolu var | Tek-etiketli sınıflandırmanın bileşik istekleri kaybetmesini önlemek, tek-niyetli turlarda sıfır ek maliyetle ([ADR-012](docs/decisions/ADR-012-multi-intent-dispatch.md)) |
 | Bankacılık verisi | Postgres (`accounts`/`cards`/`transactions`) + in-memory fallback | Gerçek parametreli SQL, ama `DATABASE_URL` yoksa CI/lokal geliştirme yine sıfır altyapıyla çalışsın ([ADR-010](docs/decisions/ADR-010-postgres-banking-data.md)) |
 | Varlık çıkarımı (NER) | Regex taban + gerçek modda ek bir LLM geçişi | Regex'in kör olduğu serbest metin (kişi adı vb.) için recall, kesin alanlarda regex'in hızı/kesinliği korunuyor ([ADR-011](docs/decisions/ADR-011-hybrid-ner.md)) |
 
@@ -130,8 +130,11 @@ Detaylı diyagram, süreç sınırları ve ölçeklenebilirlik notları için �
 
 ## Hızlı başlangıç
 
-Gerçek bir API anahtarı **gerekmez** — anahtar yoksa sistem otomatik olarak deterministik
-"fake" LLM/embedding sağlayıcılarına düşer (bkz. `ADR-003`).
+Aşağıdaki komutları çalıştırmak için bir API anahtarına ihtiyacınız yok — projeyi klonlayıp
+`docker compose up` ile hemen deneyebilirsiniz. `.env`'e bir anahtar eklerseniz (Anthropic,
+OpenAI ya da Google) sistem hiçbir kod değişikliği gerekmeden gerçek modele geçer; eklemezseniz
+deterministik bir sahte sağlayıcıya düşer, böylece hem demo hem testler API'ye/ağa hiç
+çıkmadan çalışır (gerekçesi: `ADR-003`).
 
 ```bash
 cp .env.example .env
@@ -161,25 +164,29 @@ curl -X POST http://localhost:8000/chat \
   -d '{"message": "EFT limitiniz ne kadar?"}'
 ```
 
-Örnek yanıt (kısaltılmış — `LLM_PROVIDER=fake` ile, gerçek bir sağlayıcıda `answer`
-daha akıcı olur):
+Örnek yanıt (kısaltılmış — `LLM_PROVIDER=google` ile canlı yakalandı, `.env`'de anahtar
+yoksa `answer` yerine deterministik bir sahte metin gelir, geri kalan şekil aynı kalır):
 
 ```json
 {
-  "conversation_id": "f8161243-d27a-461d-966f-6944e49aaa3d",
-  "answer": "[fake-llm] response-cc-24-7e-c3: Bağlam:\n[1] Havale/EFT Limitleri: ...",
+  "conversation_id": "f4ac8fef-bc7b-46eb-8ded-04f62aadbefb",
+  "answer": "Bireysel müşteriler için varsayılan günlük toplam transfer limiti 50.000 TL'dir ve bu limit; havale, EFT ve FAST işlemlerinin toplamını kapsar. Tekil bir EFT işlemi için üst sınır ise 20.000 TL'dir.",
   "intent": "RAG_QUERY",
   "entities": [],
   "citations": [
-    { "doc_id": "havale-eft-limitleri.md-2", "title": "Havale/EFT Limitleri", "score": 0.67, "snippet": "..." }
+    { "doc_id": "havale-eft-limitleri.md-1", "title": "Havale/EFT Limitleri", "score": 0.86, "snippet": "Bireysel müşteriler için varsayılan günlük toplam transfer limiti 50.000 TL'dir..." },
+    { "doc_id": "havale-eft-limitleri.md-3", "title": "Havale/EFT Limitleri", "score": 0.87, "snippet": "FAST sistemi üzerinden yapılan transferlerde işlem saniyeler içinde gerçekleşir..." }
   ],
   "tool_calls": [],
   "trace": [
+    { "node": "memory_load", "summary": "loaded 0 prior turn(s)" },
     { "node": "ner_agent", "summary": "extracted 0 entity(ies)" },
-    { "node": "intent_agent", "summary": "classified as RAG_QUERY (confidence=0.55)" },
+    { "node": "intent_agent", "summary": "classified as RAG_QUERY (confidence=0.90)" },
     { "node": "supervisor", "summary": "routing decision for intent=RAG_QUERY" },
-    { "node": "rag_agent", "summary": "answered using 1 citation(s)" },
-    { "node": "guardrail", "summary": "guardrail resolved response (0 flag(s))" }
+    { "node": "rag_agent", "summary": "answered using 4 citation(s)" },
+    { "node": "supervisor", "summary": "routing decision for intent=RAG_QUERY" },
+    { "node": "guardrail", "summary": "guardrail resolved response (0 flag(s))" },
+    { "node": "memory_save", "summary": "turn persisted" }
   ],
   "guardrail_flags": [],
   "iterations": 0
@@ -256,6 +263,10 @@ merkezinde, bu yüzden izlenebilirlik sona eklenen bir özellik değil.
   bu demo'nun kapsamı dışında bırakıldı (bkz. ADR-010).
 - LLM tabanlı NER geçişi karakter offset'i vermiyor (`start`/`end` boş kalıyor) —
   regex'in bulduklarıyla dedup, tip + normalize-değer eşleşmesine dayanıyor (bkz. ADR-011).
+- **Açık bir sorun, düzeltilmedi:** çoklu-niyet dispatch'te (ADR-012) her alt-niyet hâlâ
+  kullanıcının tam mesajını görüyor, izole bir alt-sorgu değil — bileşik bir mesajda RAG
+  retrieval kalitesi düşüp modelin yanlış bir rakam uydurmasına yol açabiliyor (canlıda
+  gözlemlendi).
 
 ## Kubernetes
 

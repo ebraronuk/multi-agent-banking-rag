@@ -10,8 +10,8 @@ OpenAI) tek satırlık bir config değişikliğiyle geçebilmeli.
   CI'da her PR gerçek para harcar ve ağ bağımlılığı yüzünden testler kırılgan olur.
   Anahtar sızması riski.
 - **B: Her yerde `unittest.mock.patch`** — testler geçer ama üretim kodu hâlâ "anahtarsız
-  açılmıyor" durumunda kalır; demo/CV incelemesi yapan biri projeyi klonlayıp
-  `docker compose up` dediğinde 500 hatasıyla karşılaşır.
+  açılmıyor" durumunda kalır; projeyi klonlayıp `docker compose up` diyen biri
+  bir API anahtarı girmediyse 500 hatasıyla karşılaşır.
 - **C: Birinci sınıf `LLM_PROVIDER=fake` / `EMBEDDING_PROVIDER=fake` modu** — deterministik,
   hash tabanlı sahte model + embedding, gerçek arayüzlerle (`BaseChatModel`, `Embeddings`)
   aynı sözleşmeyi uygular.

@@ -15,6 +15,10 @@ birden fazla aracı bir turda çağırabiliyor ("kartımı blokla VE bir destek 
 ama bu, supervisor'ın seçtiği TEK kategorinin içinde kalıyor; RAG_QUERY ile CARD_ACTION gibi
 FARKLI kategoriler arasında bir köprü yok.
 
+Bu ihtiyacın ölçülmüş bir kullanıcı verisi yok — bu bir portföy projesi, elde şikayet/log
+yok. Buradaki gerekçe tek-etiketli sınıflandırmanın teorik sınırından geliyor, gözlemlenmiş
+bir talep oranından değil.
+
 ## Araştırma
 
 - **LangGraph supervisor vs. swarm desenleri**: supervisor deseninde her etkileşim bir
@@ -23,14 +27,9 @@ FARKLI kategoriler arasında bir köprü yok.
 - **Anthropic'in kendi multi-agent araştırma sistemi**: bir lead agent planlıyor, birden
   fazla alt-agent'ı paralel çalıştırıyor, sonra bulguları ayrı bir sentez adımıyla
   birleştiriyor — "orchestrator-worker" deseni. Anthropic'in kendi ölçümünde bu, tek-ajanlı
-  bir kuruluma göre ciddi bir kalite farkı yaratıyor, ama token maliyeti de yaklaşık 15 kat.
-- **Kendi "Asisimo" projem** (aile asistanı, ~200K satır, 21 uzman agent, LangGraph):
-  supervisor → orchestrator → uzman agent zincirinde, orchestrator katmanı zaten "tek
-  mesajda birden fazla agent'ı sırayla çalıştıran çoklu-niyet dispatch" yapıyor
-  (`orchestrator.node.js:88-209`), üstüne güven skoru yüksek + düşük riskli niyetlerde
-  orchestrator'ı atlayan bir fast-path var. Bu depoda çözülmesi gereken problem, o projede
-  zaten üretimde çalışan bir çözümle karşılanmış durumda — burada aynı fikri, bu projenin
-  ölçeğine (4 kategori, tek turlu bileşik istekler) uyarlıyorum.
+  bir kuruluma göre ciddi bir kalite farkı yaratıyor, ama token maliyeti de yaklaşık 15 kat —
+  bu projeyle aynı ölçekte değil (paralel, çok daha yüksek maliyetli bir sistem). Buradan
+  alınan tek şey "birden fazla worker'ı sırayla işletip ayrı bir adımda birleştirme" fikri.
 
 ## Seçenekler
 
@@ -64,8 +63,14 @@ gidiliyor — bugünkü davranışla birebir aynı.
 
 `ESCALATE`/`OUT_OF_SCOPE` zincire dahil edilmiyor: bir insana aktarım isteği genelde
 konuşmanın o an bittiği anlamına geliyor, art arda başka bir işlem zincirlemek kafa
-karıştırıcı olurdu. `SMALL_TALK` ise dahil — "EFT limitiniz ne kadar, bu arada merhaba"
-gibi bir selamlamayı bir bilgi/işlem talebiyle birlikte taşımak gayet doğal.
+karıştırıcı olurdu.
+
+`SMALL_TALK` ilk yazımda zincirden dışlanmıştı — ESCALATE/OUT_OF_SCOPE gibi "konuşmayı
+bitiren niyetler" grubuna konmuştu. Entegrasyon testi ("EFT limitiniz ne kadar, bu arada
+merhaba" gibi bileşik bir mesajın iki worker'ı da tetiklemesini bekliyordu) bu varsayımla
+kırmızı çıktı: SMALL_TALK, ESCALATE/OUT_OF_SCOPE'un aksine konuşmayı bitirmiyor, bir
+selamlamayı bir bilgi/işlem talebiyle birlikte taşımak gayet doğal. Bunun üzerine zincire
+dahil edildi.
 
 ## Sonuçlar
 
@@ -75,15 +80,41 @@ gibi bir selamlamayı bir bilgi/işlem talebiyle birlikte taşımak gayet doğal
   `advance_intent`/`synthesizer` hiç çalışmıyor.
 - ✅ `tool_calls` reducer'ı sayesinde iki farklı kategoriden gelen araç çağrıları
   (`block_card` + `get_balance`) tek `ChatResponse.tool_calls`'ta doğru birikiyor.
+- ✅ (sonradan eklendi) İlk halinde `extra_intents` sadece gerçek bir LLM'in structured
+  output'undan geliyordu — `LLM_PROVIDER=fake` (varsayılan, anahtarsız `docker compose up`
+  yolu) her zaman boş liste dönüyordu, yani bu turun en yeni parçası kimse anahtarsız
+  çalıştırdığında hiç tetiklenmiyordu. `nlp/intent_classifier.py::_rule_based_extra_intents`
+  bunu kapatıyor: kural tabanlı yol da artık kendi anahtar kelime skorlarından ikincil bir
+  niyet çıkarabiliyor, `intent_agent`'taki `_clean_extra_intents` filtresi (chainable-set +
+  dedup + 2 sınırı) her iki yoldan gelen listeye de aynı şekilde uygulanıyor. Sonuç: "Kartımı
+  blokla ve EFT limitiniz ne kadar?" artık hiçbir anahtar girilmeden de çift worker'ı tetikliyor
+  (daha kaba, keyword-tabanlı bir tespitle — gerçek LLM'in okuduğu anlamı değil). İlk sürümü
+  bunu çok gevşek uyguluyordu (tek bir zayıf kelime eşleşmesi yetiyordu) ve gerçek bir
+  regresyona yol açtı: "Kartımı ne zaman bloke edebilirim, politikanız nedir?" gibi saf bir
+  RAG_QUERY, sadece "bloke" kelimesi geçtiği için CARD_ACTION'ı da extra intent sanıp
+  tool_agent'ı tetikliyor, cevaba alakasız bir "kartının son 4 hanesi?" sorusu ekliyordu
+  (`tests/e2e/test_full_conversation_flow.py`'de yakalandı). Düzeltme: CARD_ACTION/
+  ACCOUNT_ACTION/TRANSACTION_ACTION gibi gerçek bir işlem tetikleyen niyetler artık ya bir
+  entity'yle ya da çok kelimeli, spesifik bir kalıpla desteklenmeden extra intent sayılmıyor;
+  RAG_QUERY/SMALL_TALK gibi düşük riskli niyetler tek eşleşmeyle yetiniyor.
 - ❌ İkinci niyetin işlenmesi, birincinin SONUCUNA bağlı olamıyor ("önce bakiyeme bak,
   düşükse bir uyarı ekle" gibi) — her pass birbirinden bağımsız çalışıyor, birinin çıktısı
   diğerinin girdisi olmuyor. Bu, README'nin daha önce de belirttiği "çok adımlı planlama"
   sınırıyla aynı yerde duruyor; çözümü ayrı bir ADR'yi hak eder.
+- ❌ **Düzeltilmedi, açık bir sorun:** her alt-niyet geçişi hâlâ `state["user_query"]`'nin
+  TAMAMINI görüyor — kendi bölümüne izole edilmiş bir alt-sorgu metni yok. Canlıda gözlemlendi:
+  "Kartımı blokla ve EFT limitiniz ne kadar?" gibi bileşik bir mesajda `rag_agent`'ın retrieval
+  sorgusu kart-blokaj kelimeleriyle kirleniyor, daha zayıf/alakasız citation'lar geliyor, model
+  de boşluğu **yanlış bir rakam uydurarak** dolduruyor (gerçek KB değeri 50.000 TL iken
+  "100.000 TL" dediği görüldü — tek başına "EFT limitiniz ne kadar?" sorulduğunda doğru
+  cevap geliyor). Düzgün çözümü, intent classifier'ın her ek niyet için sadece etiketi değil,
+  ilgili metin parçasını (sub-query) da döndürmesini gerektirir — bu ADR'nin kapsamına
+  alınmadı, ayrı bir işi hak ediyor.
 - ❌ `max_agent_iterations` tüm turun genelinde tek bir sayaç — bileşik bir istek + her
   parçasında uzun bir `tool_agent` döngüsü aynı anda olursa, ikinci niyet hiç işlenmeden
   limite takılabilir. Demo ölçeğinde (varsayılan limit 6) gözlemlenmedi.
-- ❌ Semantik (embedding tabanlı) bir niyet router katmanı eklenmedi — Asisimo'daki 3
-  katmanlı (embedding → regex → LLM) yaklaşımın bir parçası, ve `rag/embeddings.py`
+- ❌ Semantik (embedding tabanlı) bir niyet router katmanı eklenmedi — 3 katmanlı
+  (embedding → regex → LLM) bir yaklaşımın parçası olurdu, ve `rag/embeddings.py`
   altyapısı zaten var. Bilinçli olarak bu tura dahil edilmedi: varsayılan konfigürasyonda
   (`EMBEDDING_PROVIDER=fake`) `FakeHashEmbeddings` gerçek bir anlamsal benzerlik ölçmüyor,
   sadece token örtüşmesi ölçüyor — yani regex katmanından somut bir fark yaratmıyor,
