@@ -18,10 +18,14 @@ from pydantic import BaseModel, Field
 class IntentLabel(StrEnum):
     RAG_QUERY = "RAG_QUERY"  # bilgi tabanından yanıtlanabilecek politika/SSS sorusu
     ACCOUNT_ACTION = "ACCOUNT_ACTION"  # bakiye/ekstre/hesap bilgisi sorgusu
-    TRANSACTION_ACTION = "TRANSACTION_ACTION"  # transfer, işlem geçmişi
+    TRANSACTION_ACTION = "TRANSACTION_ACTION"  # işlem geçmişi (son hareketler) sorgusu
     CARD_ACTION = "CARD_ACTION"  # blokla/kaldır/limit değişikliği
     SMALL_TALK = "SMALL_TALK"
-    ESCALATE = "ESCALATE"  # kullanıcı açıkça bir insan istiyor
+    # Kullanıcı açıkça bir insan istiyor VEYA bankacılıkla ilgili ama asistanın
+    # araçlarının kapsamadığı bir talepte bulunuyor (hesap açma, kredi başvurusu,
+    # para transferi/EFT çalıştırma — sadece list_transactions var, gönderen bir
+    # araç yok). İkisi de aynı yere gidiyor: gerçek bir insan gerekiyor.
+    ESCALATE = "ESCALATE"
     OUT_OF_SCOPE = "OUT_OF_SCOPE"
 
 

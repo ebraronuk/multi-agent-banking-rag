@@ -45,15 +45,27 @@ async def test_intent_node_classifies_normally_without_any_pending_request() -> 
     assert result["intent"] == IntentLabel.SMALL_TALK
 
 
-async def test_intent_node_fake_model_never_produces_extra_intents() -> None:
-    # Kural tabanlı yol tek etiket üretir — extra_intents her zaman boş liste,
-    # hiçbir zaman None ya da başka bir şey.
+async def test_intent_node_fake_model_returns_empty_extra_intents_for_single_intent_message() -> None:
+    node = build_intent_node(FakeChatModel())
+    state = new_state("c1", "merhaba, nasılsınız")
+
+    result = await node(state)
+
+    assert result["extra_intents"] == []
+
+
+async def test_intent_node_fake_model_detects_extra_intent_for_compound_message() -> None:
+    # Fake modda da çoklu-niyet dispatch'in (ADR-012) tetiklenebildiğinin
+    # intent_agent katmanındaki regresyon testi — nlp/intent_classifier.py'nin
+    # kendi testleri _rule_based_extra_intents'i izole test ediyor, bu da
+    # onun _clean_extra_intents ile birlikte doğru çalıştığını doğruluyor.
     node = build_intent_node(FakeChatModel())
     state = new_state("c1", "kartımı blokla ve EFT limitiniz ne kadar")
 
     result = await node(state)
 
-    assert result["extra_intents"] == []
+    assert result["intent"] == IntentLabel.RAG_QUERY
+    assert result["extra_intents"] == [IntentLabel.CARD_ACTION]
 
 
 class _StubIntentModel:

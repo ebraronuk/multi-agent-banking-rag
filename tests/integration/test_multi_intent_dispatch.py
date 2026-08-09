@@ -1,11 +1,17 @@
 """Gerçek derlenmiş grafiğe karşı: tek mesajda iki farklı niyetin (RAG_QUERY +
 SMALL_TALK) ikisinin de işlenip tek bir cevapta birleştiğini uçtan uca doğrular
-(bkz. ADR-012). Sahte modelde bu yol hiç tetiklenmediği için (extra_intents her
-zaman boş), `get_chat_model`'i senaryoyu canlandıran bir script'li modelle,
+(bkz. ADR-012). Gerçek modda ne olduğunu (structured-output'un extra_intents
+alanı) senaryolandırmak için `get_chat_model`'i script'li bir modelle,
 `get_tool_client`'ı da ağa çıkmayan in-process istemciyle değiştiriyoruz —
 `agents/graph.py` içindeki gerçek düğüm/kenar bağlantısı test ediliyor, bir
 kopyası değil.
-"""
+
+Ayrıca gerçek `FakeChatModel`'e karşı bir test var
+(`test_multi_intent_dispatch_works_end_to_end_in_fake_mode_too`): daha önce
+`classify_intent` fake modda `extra_intents` için hep `[]` döndürüyordu, yani
+bu tur eklenen özellik `LLM_PROVIDER=fake` (varsayılan, anahtarsız) modda hiç
+tetiklenmiyordu. `nlp/intent_classifier.py::_rule_based_extra_intents` bunu
+kapattı; buradaki test script'li mock'a değil, gerçek fake modele karşı."""
 
 from __future__ import annotations
 
@@ -130,3 +136,30 @@ async def test_single_intent_message_never_touches_advance_or_synthesizer() -> N
     assert "advance_intent" not in node_sequence
     assert "synthesizer" not in node_sequence
     assert final_state["final_answer"] == "Merhaba, size nasıl yardımcı olabilirim?"
+
+
+async def test_multi_intent_dispatch_works_end_to_end_in_fake_mode_too() -> None:
+    """`get_chat_model`'i hiç patch'lemiyor — gerçek `FakeChatModel` + gerçek
+    `nlp/intent_classifier.py::_rule_based_extra_intents` yolu. Daha önce bu
+    senaryo (anahtarsız `docker compose up`) hiç `advance_intent`/`synthesizer`
+    tetiklemezdi; regresyon testi budur."""
+    settings = Settings()  # llm_provider/embedding_provider varsayılanı fake
+
+    with patch(
+        "agents.graph.get_tool_client",
+        return_value=InProcessToolClient(InMemoryBankingRepository()),
+    ):
+        graph = build_graph(settings)
+        final_state = await graph.ainvoke(
+            new_state("c1", "Kartımı blokla, son dört hane 4321, ve EFT limitiniz ne kadar?")
+        )
+
+    node_sequence = [step.node for step in final_state["trace"]]
+    assert "tool_agent" in node_sequence
+    assert "rag_agent" in node_sequence
+    assert "advance_intent" in node_sequence
+    assert "synthesizer" in node_sequence
+    assert node_sequence.count("tool_agent") == 1
+    assert node_sequence.count("rag_agent") == 1
+    assert final_state["final_answer"]
+    assert any(call.tool_name == "block_card" and call.ok for call in final_state["tool_calls"])
