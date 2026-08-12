@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from agents.state import new_state
 from agents.workers.escalate_agent import escalate_node
-from schemas.dto import IntentLabel
+from schemas.dto import EntityType, IntentLabel, PendingEntityRequest
 
 
 def test_escalate_intent_combines_handoff_greeting_and_verification_request() -> None:
@@ -98,3 +98,25 @@ def test_resolved_stage_closes_gracefully_on_anything_else() -> None:
 
     assert result["escalation_stage"] is None
     assert result["draft_answer"]
+
+
+def test_unmatched_pending_entity_reply_gets_a_targeted_retry_not_generic_out_of_scope() -> None:
+    # Regresyon: tool_agent bir IBAN isteyip kullanıcı "4321" (bir IBAN değil)
+    # yazdığında, ner_agent bunu bir IBAN olarak tanımadığı için sistem hiçbir
+    # şey eşleşmemiş gibi genel "kapsam dışı" yetenek listesine düşüyordu — az
+    # önce sorduğu soruyu unutmuş gibi görünüyordu.
+    state = new_state("c1", "4321")
+    state["intent"] = IntentLabel.OUT_OF_SCOPE
+    state["carried_pending_request"] = PendingEntityRequest(
+        intent=IntentLabel.ACCOUNT_ACTION, entity_type=EntityType.IBAN, original_message="bakiyem ne kadar?"
+    )
+
+    result = escalate_node(state)
+
+    answer = result["draft_answer"].lower()
+    assert "iban" in answer
+    assert "yardımcı olabilirim" not in answer  # genel kapsam-dışı listesi değil
+    # Bekleyen istek bir sonraki turn için taşınmalı, yoksa tek denemelik bir
+    # hafıza kaybı olur.
+    assert result["pending_entity_request"].entity_type == EntityType.IBAN
+    assert result["escalation_stage"] is None

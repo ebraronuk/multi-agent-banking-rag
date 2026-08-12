@@ -35,7 +35,7 @@ from __future__ import annotations
 import re
 
 from agents.state import GraphState
-from schemas.dto import AgentTraceStep, IntentLabel
+from schemas.dto import AgentTraceStep, EntityType, IntentLabel
 
 _AGENT_NAME = "Aylin"
 
@@ -64,6 +64,22 @@ _OUT_OF_SCOPE_MESSAGE = (
     "hakkında bir sorunuz varsa yardımcı olabilirim, ya da sizi bir müşteri temsilcisine "
     "yönlendirebilirim."
 )
+
+# tool_agent bir entity isteyip (ör. IBAN) hiç cevap alamadığında değil, cevap
+# GELİP de beklenen formata uymadığında (ör. IBAN yerine "4321" yazılması)
+# devreye giriyor — bu turda hiçbir intent eşleşmediği için normalde yukarıdaki
+# genel _OUT_OF_SCOPE_MESSAGE'a düşerdi, ki bu da az önce sorulan soruyu
+# unutmuş gibi görünürdü (canlıda görüldü).
+_PENDING_RETRY_MESSAGES: dict[EntityType, str] = {
+    EntityType.IBAN: (
+        "Bu bir IBAN gibi görünmüyor. TR ile başlayan 26 haneli hesap numaranızı tam "
+        "olarak paylaşır mısınız?"
+    ),
+    EntityType.CARD_LAST4: (
+        "Bu bir kart numarası gibi görünmüyor. Kartınızın son 4 hanesini rakamla yazar "
+        "mısınız?"
+    ),
+}
 
 # Gerçek bir hesap sorgusu değil (bkz. modül docstring'i) — bir NER entity'si
 # ya da banking_repository'ye karşı bir doğrulama değil, sadece "kullanıcı 4
@@ -96,6 +112,25 @@ def escalate_node(state: GraphState) -> dict[str, object]:
             "verifying",
             "handed off, agent greeted, verification requested",
         )
+
+    pending = state.get("carried_pending_request")
+    if pending is not None and pending.entity_type in _PENDING_RETRY_MESSAGES:
+        return {
+            "draft_answer": _PENDING_RETRY_MESSAGES[pending.entity_type],
+            "escalation_stage": None,
+            # tool_agent'ın kendi missing-entity dalıyla aynı sözleşme: bir
+            # sonraki turn'de bare cevap (ör. "TR33...") ner_agent'taki bekleyen
+            # slot-doldurma yoluyla (ADR-008) tanınabilsin diye bunu taşıyoruz.
+            # Taşımasak memory_save bunu None'a yazardı, tek retry'lik bir
+            # hafıza kaybı olurdu.
+            "pending_entity_request": pending,
+            "trace": [
+                AgentTraceStep(
+                    node="escalate",
+                    summary=f"pending {pending.entity_type} not satisfied by this turn, retry prompt",
+                )
+            ],
+        }
 
     return {
         "draft_answer": _OUT_OF_SCOPE_MESSAGE,

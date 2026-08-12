@@ -154,3 +154,19 @@ def test_rule_based_extra_intents_requires_corroboration_for_action_intents() ->
         "Kartımı ne zaman bloke edebilirim, politikanız nedir?", [], IntentLabel.RAG_QUERY
     )
     assert extra == []
+
+
+def test_rule_based_extra_intents_does_not_treat_a_shared_entity_as_a_second_intent() -> None:
+    # Regresyon: IBAN, ACCOUNT_ACTION ve TRANSACTION_ACTION arasında PAYLAŞILAN
+    # bir entity boost'u (bkz. _ENTITY_BOOSTS). Canlıda "IBAN'ım X, bakiyemi
+    # öğrenebilir miyim?" yanlışlıkla hem get_balance hem list_transactions
+    # çağırıyordu — tek bir IBAN'ın varlığı "kullanıcı hem bakiye hem işlem
+    # geçmişi istiyor" demek değil, sadece "bu istek şu hesapla ilgili" demek.
+    entities = [Entity(type=EntityType.IBAN, value="TR33...", normalized="TR33...")]
+    text = "IBAN'ım TR33..., bakiyemi öğrenebilir miyim?"
+
+    intent, confidence = classify_intent_rule_based(text, entities)
+    assert intent == IntentLabel.ACCOUNT_ACTION
+
+    extra = _rule_based_extra_intents(text, entities, intent)
+    assert extra == []

@@ -181,25 +181,28 @@ _EXTRA_INTENT_MIN_SCORE = 1
 
 # CARD_ACTION/ACCOUNT_ACTION/TRANSACTION_ACTION gerçek bir işlem tetikliyor
 # (bkz. ADR-009) — bunları tek bir belirsiz kelimeden ikincil bir niyet
-# sanmak ucuz değil: tool_agent'ı devreye sokup kullanıcıya alakasız bir
-# takip sorusu ("kartının son 4 hanesi?") sordurur, tek-niyetli bir cevabı
-# kirletir. Somut örnek: "Kartımı ne zaman bloke edebilirim, politikanız
+# sanmak ucuz değil: tool_agent'ı devreye sokup alakasız bir ikinci aracı
+# (ör. get_balance yanında list_transactions) çağırtır, tek-niyetli bir
+# cevabı kirletir. Somut örnek: "Kartımı ne zaman bloke edebilirim, politikanız
 # nedir?" saf bir RAG_QUERY, ama "bloke" kelimesi CARD_ACTION'da da geçiyor.
-# Bu yüzden bu üçü extra intent olmak için ya bir entity ile (IBAN/kart son 4
-# hane) ya da çok kelimeli, spesifik bir kalıpla ("kartımı blokla") destekli
-# olmalı — tek başına "bloke"/"bakiye"/"harcama" gibi tek kelimelik, bağlama
-# göre hem soru hem komut olabilen bir eşleşme yetmiyor. RAG_QUERY/SMALL_TALK
-# düşük riskli (yanlış tetiklenirse en kötü ihtimalle gereksiz bir cümle
-# eklenir), o yüzden onlar tek bir eşleşmeyle yetiniyor.
+# Bu yüzden bu üçü extra intent olmak için çok kelimeli, spesifik bir kalıpla
+# ("kartımı blokla") desteklenmesi gerekiyor — tek başına "bloke"/"bakiye"/
+# "harcama" gibi tek kelimelik, bağlama göre hem soru hem komut olabilen bir
+# eşleşme yetmiyor.
+#
+# Entity varlığı BİLEREK yeterli sayılmıyor: IBAN, ACCOUNT_ACTION ve
+# TRANSACTION_ACTION arasında PAYLAŞILAN bir entity boost'u (bkz.
+# _ENTITY_BOOSTS) — canlı regresyon: "IBAN'ım X, bakiyemi öğrenebilir miyim?"
+# yanlışlıkla hem get_balance hem list_transactions çağırıyordu, çünkü tek
+# bir IBAN'ın varlığı "kullanıcı hem bakiye HEM işlem geçmişi istiyor" gibi
+# okunuyordu — oysa tek bir IBAN sadece "bu istek şu hesapla ilgili" demek,
+# ikinci bir isteğin kanıtı değil. RAG_QUERY/SMALL_TALK düşük riskli (yanlış
+# tetiklenirse en kötü ihtimalle gereksiz bir cümle eklenir), o yüzden onlar
+# tek bir eşleşmeyle yetiniyor.
 _EXTRA_INTENT_CORROBORATION_REQUIRED = frozenset(_ENTITY_BOOSTS.keys())
 
 
-def _has_strong_extra_intent_signal(
-    intent: IntentLabel, lowered_text: str, entity_types: set[EntityType]
-) -> bool:
-    boost_types = _ENTITY_BOOSTS.get(intent, ())
-    if any(entity_type in entity_types for entity_type in boost_types):
-        return True
+def _has_strong_extra_intent_signal(intent: IntentLabel, lowered_text: str) -> bool:
     return any(
         " " in keyword and keyword in lowered_text for keyword in _INTENT_KEYWORDS.get(intent, ())
     )
@@ -224,14 +227,13 @@ def _rule_based_extra_intents(
     """
     scores = _score_intents(text, entities)
     lowered = text.lower()
-    entity_types = {entity.type for entity in entities}
 
     candidates = []
     for intent, score in scores.items():
         if intent == primary or score < _EXTRA_INTENT_MIN_SCORE:
             continue
         if intent in _EXTRA_INTENT_CORROBORATION_REQUIRED and not _has_strong_extra_intent_signal(
-            intent, lowered, entity_types
+            intent, lowered
         ):
             continue
         candidates.append(intent)
