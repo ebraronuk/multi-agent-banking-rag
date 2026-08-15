@@ -47,11 +47,8 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     configure_logging(settings)
-    # Grafiği başlangıçta (her istekte değil) kurmak, vektör deposu bağlantısı,
-    # embedding'ler ve MCP araç istemcisinin hepsinin bir kere kurulması demek
-    # — her istekte soğuk bir Chroma/embedding init'i, hiçbir kazanç olmadan
-    # p99 gecikmesini öngörülemez yapardı; bunların hiçbiri kullanıcıya özel
-    # bir durum değil zaten.
+    # Grafik başlangıçta bir kere kurulur — her istekte soğuk Chroma/embedding
+    # init'i p99 gecikmesini öngörülemez yapardı.
     app.state.settings = settings
     app.state.graph = build_graph(settings)
     logger.info(
@@ -70,10 +67,8 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
-# CORS_ALLOWED_ORIGINS varsayılan olarak frontend'in lokal geliştirme portu
-# (frontend/README.md) — gerçek bir dağıtım bunu gerçek frontend origin'ine
-# set eder, asla "*" değil (bu API'de auth yok; açık bir CORS politikası
-# herhangi bir sitenin bir ziyaretçi adına bunu çağırmasına izin verirdi).
+# Gerçek bir dağıtım CORS_ALLOWED_ORIGINS'i gerçek frontend origin'ine set
+# etmeli, asla "*" değil — bu API'de auth yok.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_settings().cors_allowed_origins_list,
@@ -86,19 +81,14 @@ app.state.limiter = limiter
 app.include_router(health.router)
 app.include_router(chat.router)
 
-# /metrics kimlik doğrulamasız — bu demo'nun her yerdeki auth-yok duruşuyla
-# tutarlı (bkz. README "Sınırlar"). Gerçek bir dağıtım bunu /chat ile aynı
-# public dinleyicide açık etmek yerine cluster'ın iç ağının arkasına koyardı
-# (Prometheus onu oradan çeker).
+# /metrics kimlik doğrulamasız (bkz. README "Sınırlar") — gerçek bir dağıtım
+# bunu public dinleyici yerine cluster'ın iç ağının arkasına koyardı.
 Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
 
 
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> Response:
-    # /chat'in arkasındaki her LLM çağrısı gerçek para ve gerçek gecikme
-    # maliyeti taşıyor — saf ya da kötü niyetli bir istemcinin sıkı bir
-    # döngüde tekrar denemesi bunu sınırsız tüketememeli. Asıl route-bazlı
-    # sınır için bkz. `app/api/routes/chat.py`.
+    # /chat'in arkasındaki her LLM çağrısı gerçek para/gecikme maliyeti taşıyor.
     logger.warning("rate_limit_exceeded", path=request.url.path, detail=str(exc.detail))
     response = JSONResponse(
         status_code=429,
@@ -114,10 +104,7 @@ async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) 
 async def validation_exception_handler(
     request: Request, exc: RequestValidationError
 ) -> JSONResponse:
-    # FastAPI'nin varsayılan 422 gövdesi belgelenmiş ErrorResponse sözleşmemizle
-    # uyuşmuyor — hata cevaplarını işleyen bir istemci sadece doğrulama
-    # hataları için özel bir durum yazmak zorunda kalırdı. Bu API'nin döndüğü
-    # her diğer hatayla aynı zarfa dönüştür.
+    # FastAPI'nin varsayılan 422 gövdesi ErrorResponse sözleşmemize uymuyor.
     logger.info("request_validation_failed", path=request.url.path, errors=exc.errors())
     return JSONResponse(
         status_code=422,
@@ -131,9 +118,7 @@ async def validation_exception_handler(
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    # API yanıtındaki bir stack trace faydalı bir hata mesajı değil, bir bilgi
-    # sızıntısıdır — gerçek exception'ı sunucu tarafında logla, çağırana
-    # jenerik, tipli bir hata döndür.
+    # API yanıtında stack trace bilgi sızıntısıdır — sunucu tarafında logla, çağırana jenerik hata dön.
     logger.error("unhandled_exception", path=request.url.path, error=str(exc), exc_info=True)
     return JSONResponse(
         status_code=500,

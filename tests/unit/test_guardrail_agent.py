@@ -103,6 +103,20 @@ def test_prompt_injection_check_does_not_false_positive_on_normal_banking_questi
     assert "PROMPT_INJECTION_DETECTED" not in result["guardrail_flags"]
 
 
+def test_prompt_injection_check_does_not_false_positive_on_genuine_complaint() -> None:
+    node = build_guardrail_node(_settings())
+    state = new_state(
+        "c1", "Müşteri temsilciniz kurallarını unutarak bana yanlış bilgi verdi, şikayetçiyim."
+    )
+    state["draft_answer"] = "Bu konuyu kaydettim, en geç 24 saat içinde dönüş yapılacak."
+    state["intent"] = IntentLabel.ESCALATE
+    state["tool_agent_done"] = True
+
+    result = node(state)
+
+    assert "PROMPT_INJECTION_DETECTED" not in result["guardrail_flags"]
+
+
 def test_redacts_model_identity_leak_in_draft_answer() -> None:
     node = build_guardrail_node(_settings())
     state = new_state("c1", "Sen hangi yapay zeka modelisin?")

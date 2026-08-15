@@ -1,13 +1,8 @@
 """Kural tabanlı ve LLM destekli niyet sınıflandırması.
 
-Kural tabanlı yol her zaman kullanılabilir (offline, deterministik, ağsız) ve
-`classify_intent`'in LLM yoluna güvenilemediği her durumda düştüğü yer: süreç
-`FakeChatModel` üzerinde çalışıyor (bir hash digest'inin "burada hangi niyet
-geçerli" diye bir fikri yok, ona prompt yazmak tiyatro olurdu), ya da gerçek
-LLM çağrısı başarısız oluyor ya da parse edilemeyen bir şey döndürüyor. Bir
-sağlayıcının bozuk bir structured output döndürmesi yüzünden raise eden bir
-niyet sınıflandırıcısı tüm konuşma turn'ünü düşürürdü — bu gerçek bir
-production hata sınıfı, örtük bırakılmak yerine açıkça korunuyor.
+Kural tabanlı yol offline/deterministik ve `classify_intent`'in LLM yoluna
+güvenilemediği her durumda (fake model, sağlayıcı hatası, parse edilemeyen
+çıktı) düştüğü yer — süreç bu yüzden raise etmez.
 """
 
 from __future__ import annotations
@@ -19,17 +14,15 @@ from pydantic import BaseModel, Field
 from agents.prompts.intent_prompt import INTENT_SYSTEM_PROMPT
 from app.core.llm import is_fake_model
 from app.core.logging import get_logger
+from nlp.text_utils import turkish_lower
 from schemas.dto import Entity, EntityType, IntentLabel
 
 logger = get_logger(__name__)
 
-# Dict sırası aynı zamanda berabere-bozma kuralı: `classify_intent_rule_based`'in
-# `max()`'i ilk-görülen en yüksek skoru koruyor, yani RAG_QUERY (ilk listelenen)
-# bir action intent'e karşı her berabereliği kazanıyor. Bu "EFT limitiniz ne
-# kadar?" için somut olarak önemli — hem "limit" (RAG_QUERY) hem "eft"
-# (TRANSACTION_ACTION) ile eşleşiyor; belirsiz bir mesajı "işlem yap" yerine
-# "açıkla"ya varsaymak bir bankacılık asistanı için daha güvenli bir hata modu
-# (bir tahmin üzerine hiçbir şey taşınmıyor/bloklanmıyor).
+# Dict sırası berabere-bozma kuralı: `max()` ilk-görüleni koruyor, yani
+# RAG_QUERY (ilk listelenen) action intent'lere karşı beraberlikleri kazanır —
+# belirsiz bir mesajda "işlem yap" yerine "açıkla"yı varsaymak daha güvenli.
+# Deterministik bir fallback (ADR-003), recall'ı sınırlı (bkz. test_intent_classifier.py).
 _INTENT_KEYWORDS: dict[IntentLabel, tuple[str, ...]] = {
     IntentLabel.RAG_QUERY: (
         "nasıl açılır",
@@ -44,6 +37,9 @@ _INTENT_KEYWORDS: dict[IntentLabel, tuple[str, ...]] = {
         "şart",
         "koşul",
         "limit",
+        "üst sınır",
+        "azami",
+        "en fazla",
         "how do i",
         "policy",
         "fee",
@@ -54,15 +50,16 @@ _INTENT_KEYWORDS: dict[IntentLabel, tuple[str, ...]] = {
         "hesap özeti",
         "hesabım ne kadar",
         "hesap hareketleri",
+        "hesap durum",
+        "hesabımdaki tutar",
+        "param",
         "balance",
         "account summary",
         "my balance",
     ),
-    # Sadece görüntüleme ifadeleri — "para transfer"/"havale"/"eft" gibi bir
-    # işlemi *çalıştırma* niyeti taşıyan kalıplar bilinçli olarak burada değil,
-    # ESCALATE'te: list_transactions dışında hiçbir tool_agent aracı parayı
-    # gerçekten göndermiyor, o yüzden bu asistan öyle bir isteği burada
-    # sınıflandırırsa işlem geçmişini gösterip "yapıldı" izlenimi verirdi.
+    # Sadece görüntüleme ifadeleri — para gönderme niyeti taşıyan kalıplar
+    # bilinçli olarak burada değil, ESCALATE'te (tool_agent parayı gerçekten
+    # göndürmüyor; burada sınıflandırılırsa "yapıldı" izlenimi verirdi).
     IntentLabel.TRANSACTION_ACTION: (
         "işlem geçmişi",
         "son işlem",
@@ -73,6 +70,10 @@ _INTENT_KEYWORDS: dict[IntentLabel, tuple[str, ...]] = {
         "kartımı blokla",
         "kart engelle",
         "bloke",
+        "dondur",
+        "engelle",
+        "izinsiz işlem",
+        "şüpheli işlem",
         "kartım çalındı",
         "kartımı çaldılar",
         "kartımı kaybettim",
@@ -86,25 +87,45 @@ _INTENT_KEYWORDS: dict[IntentLabel, tuple[str, ...]] = {
         "merhaba",
         "selam",
         "teşekkür",
+        "sağol",
         "nasılsın",
+        "nasıl gidiyor",
+        "naber",
         "günaydın",
         "iyi günler",
+        "iyi akşam",
         "hello",
         "thanks",
         "thank you",
         "how are you",
     ),
-    # İnsan isteme kalıplarının yanında, bankacılıkla ilgili ama yukarıdaki
-    # üç işlem etiketinin hiçbirinin kapsamadığı talepler de burada — özellikle
-    # bir transferi/EFT'yi *çalıştırma* isteği (bkz. TRANSACTION_ACTION notu).
+    # İnsan isteme kalıplarının yanında, para gönderme gibi diğer üç işlem
+    # etiketinin kapsamadığı talepler de burada (bkz. TRANSACTION_ACTION notu).
     IntentLabel.ESCALATE: (
         "temsilciyle görüş",
-        "insana bağla",
+        "temsilciye bağlan",
+        "temsilciye aktar",
         "müşteri temsilcisi",
+        "müşteri hizmetleri",
+        "insana bağla",
+        "insanla görüş",
+        "insanla konuş",
         "gerçek bir kişi",
+        "gerçek bir insan",
+        "gerçek biri",
+        "yetkili biri",
+        "yetkiliyle görüş",
+        "canlı destek",
+        "bot değil",
+        "biriyle görüş",
+        "biriyle konuş",
+        "çalışanınızla konuş",
         "speak to a human",
+        "speak with a human",
         "representative",
         "human agent",
+        "customer service",
+        "real person",
         "hesap açtır",
         "hesap açmak istiyorum",
         "kredi başvurusu",
@@ -130,10 +151,7 @@ _INTENT_KEYWORDS: dict[IntentLabel, tuple[str, ...]] = {
 _ENTITY_BOOSTS: dict[IntentLabel, tuple[EntityType, ...]] = {
     IntentLabel.CARD_ACTION: (EntityType.CARD_LAST4,),
     IntentLabel.ACCOUNT_ACTION: (EntityType.IBAN, EntityType.ACCOUNT_TYPE),
-    # AMOUNT bilinçli olarak burada değil: bir tutarın varlığı "geçmişimi
-    # göster" değil çoğunlukla "şu kadar parayı gönder" işaret ediyor — ki bu
-    # da yukarıdaki TRANSACTION_ACTION notundaki sebeple ESCALATE'e gitmeli,
-    # yanlışlıkla TRANSACTION_ACTION'ı güçlendirmemeli.
+    # AMOUNT bilinçli olarak yok: bir tutar genelde "gönder" işaret ediyor, "göster" değil.
     IntentLabel.TRANSACTION_ACTION: (EntityType.IBAN,),
 }
 
@@ -153,7 +171,7 @@ class _IntentClassification(BaseModel):
 
 
 def _score_intents(text: str, entities: list[Entity]) -> dict[IntentLabel, int]:
-    lowered = text.lower()
+    lowered = turkish_lower(text)
     entity_types = {entity.type for entity in entities}
 
     scores: dict[IntentLabel, int] = {
@@ -179,26 +197,11 @@ def classify_intent_rule_based(text: str, entities: list[Entity]) -> tuple[Inten
 
 _EXTRA_INTENT_MIN_SCORE = 1
 
-# CARD_ACTION/ACCOUNT_ACTION/TRANSACTION_ACTION gerçek bir işlem tetikliyor
-# (bkz. ADR-009) — bunları tek bir belirsiz kelimeden ikincil bir niyet
-# sanmak ucuz değil: tool_agent'ı devreye sokup alakasız bir ikinci aracı
-# (ör. get_balance yanında list_transactions) çağırtır, tek-niyetli bir
-# cevabı kirletir. Somut örnek: "Kartımı ne zaman bloke edebilirim, politikanız
-# nedir?" saf bir RAG_QUERY, ama "bloke" kelimesi CARD_ACTION'da da geçiyor.
-# Bu yüzden bu üçü extra intent olmak için çok kelimeli, spesifik bir kalıpla
-# ("kartımı blokla") desteklenmesi gerekiyor — tek başına "bloke"/"bakiye"/
-# "harcama" gibi tek kelimelik, bağlama göre hem soru hem komut olabilen bir
-# eşleşme yetmiyor.
-#
-# Entity varlığı BİLEREK yeterli sayılmıyor: IBAN, ACCOUNT_ACTION ve
-# TRANSACTION_ACTION arasında PAYLAŞILAN bir entity boost'u (bkz.
-# _ENTITY_BOOSTS) — canlı regresyon: "IBAN'ım X, bakiyemi öğrenebilir miyim?"
-# yanlışlıkla hem get_balance hem list_transactions çağırıyordu, çünkü tek
-# bir IBAN'ın varlığı "kullanıcı hem bakiye HEM işlem geçmişi istiyor" gibi
-# okunuyordu — oysa tek bir IBAN sadece "bu istek şu hesapla ilgili" demek,
-# ikinci bir isteğin kanıtı değil. RAG_QUERY/SMALL_TALK düşük riskli (yanlış
-# tetiklenirse en kötü ihtimalle gereksiz bir cümle eklenir), o yüzden onlar
-# tek bir eşleşmeyle yetiniyor.
+# CARD_ACTION/ACCOUNT_ACTION/TRANSACTION_ACTION tetiklenince gerçek bir işlem
+# çalışır (ADR-009) — extra intent için çok kelimeli, spesifik bir kalıp
+# gerekiyor. Regresyon: paylaşılan bir entity boost tek bir IBAN'ı iki intent'e
+# birden kanıt sayıp gereksiz bir ikinci aracı tetikliyordu.
+# RAG_QUERY/SMALL_TALK düşük riskli, tek eşleşmeyle yetiniyor.
 _EXTRA_INTENT_CORROBORATION_REQUIRED = frozenset(_ENTITY_BOOSTS.keys())
 
 
@@ -211,22 +214,12 @@ def _has_strong_extra_intent_signal(intent: IntentLabel, lowered_text: str) -> b
 def _rule_based_extra_intents(
     text: str, entities: list[Entity], primary: IntentLabel
 ) -> list[IntentLabel]:
-    """Kural tabanlı yolun kendi çoklu-niyet tespiti.
-
-    `classify_intent_rule_based` sadece argmax'ı döndürüyor, ikinci en yüksek
-    puanlı niyeti sessizce atıyordu — bu da çoklu-niyet dispatch'i (ADR-012)
-    `LLM_PROVIDER=fake` (varsayılan, anahtarsız) modda hiç tetiklenemez
-    yapıyordu: projenin en yeni parçası kimse anahtarsız çalıştırdığında
-    görünmüyordu. Burada `_score_intents`'in zaten hesapladığı puanlardan
-    birincil dışında, yeterince güçlü bir sinyali olan diğer niyetleri
-    çıkarıyoruz (bkz. `_has_strong_extra_intent_signal`) — gerçek LLM'in
-    yaptığı anlam çıkarımı değil, ama aynı sonucu (birden fazla worker'ın
-    zincirlenmesi) anahtarsız da gösterebiliyor. `intent_agent._clean_extra_intents`
-    bunun üzerine aynı chainable-set/dedup/2-sınır filtresini gerçek LLM
-    yolundakiyle birebir aynı şekilde uyguluyor.
+    """Kural tabanlı yolun kendi çoklu-niyet tespiti — fake modda da ADR-012'nin
+    tetiklenebilmesi için. `intent_agent._clean_extra_intents` aynı chainable-
+    set/dedup/2-sınır filtresini gerçek LLM yolundakiyle aynı şekilde uyguluyor.
     """
     scores = _score_intents(text, entities)
-    lowered = text.lower()
+    lowered = turkish_lower(text)
 
     candidates = []
     for intent, score in scores.items():

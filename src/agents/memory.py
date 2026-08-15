@@ -1,13 +1,7 @@
 """Kısa süreli konuşma hafızası: her `conversation_id` için turn geçmişi +
-"ne cevap bekliyorduk" slot-doldurma durumu.
-
-Aynı duck-typed arayüzün (`async load`/`async save_turn`) arkasında iki
-backend — `app/core/llm.py`/`rag/embeddings.py` ile aynı fail-open desen:
-`REDIS_URL` set edilmişse `RedisMemory` (replikalar arası paylaşılır, restart'a
-dayanır), yoksa `InMemoryMemory` (tek process'lik dict, lokal/test/CI için
-sorun değil, restart'ta gider). İkisi de bir depolama hatasını turn'ü
-çökertmeye izin vermiyor — bir Redis aksaklığı "bu turn hafızasız" olarak
-zarifçe düşüyor, 500 olarak değil (bkz. ADR-008).
+slot-doldurma durumu. `REDIS_URL` set edilmişse `RedisMemory`, yoksa
+`InMemoryMemory` (aynı fail-open desen, ADR-008) — bir depolama hatası
+turn'ü çökertmez, hafızasız devam eder.
 """
 
 from __future__ import annotations
@@ -136,9 +130,7 @@ class RedisMemory:
                 self._key(conversation_id), _encode(context), ex=self._ttl_seconds
             )
         except Exception:
-            # Kaybolan bir yazma, bir sonraki turn'ün hafızasız başlaması
-            # demek — bozulmuş bir konuşma, başarısız bir işlem değil. Bu
-            # exception memory_save düğümünün ötesine hiç geçmemeli.
+            # Kaybolan bir yazma sadece bir sonraki turn'ü hafızasız başlatır, işlemi çökertmez.
             logger.warning("conversation_memory_save_failed", conversation_id=conversation_id, exc_info=True)
 
 
@@ -174,14 +166,9 @@ def history_to_messages(history: list[ChatMessage]) -> list[BaseMessage]:
 def synthesize_bare_answer_entity(
     text: str, pending: PendingEntityRequest
 ) -> tuple[IntentLabel, EntityType, str] | None:
-    """`text`, `pending`'in beklediği şeye çıplak bir cevap mı?
-
-    "1234" gibi bir takip cevabının yakınında `nlp/ner_extractor.py`'nin
-    regex'lerinin anchor'lanacağı bir "kart" kelimesi yok — tek başına
-    okunduğunda bu sorun değil, ama önceki turn'ün tam olarak bunu beklediğini
-    bildiğimizde yanlış olur. Kalıp dar tutuldu (tam uzunlukta rakam dizisi,
-    IBAN kalıbı) — "kısa her cevap" gibi geniş bir eşleşme, yanlış bir
-    bankacılık işlemini sessizce tetikler; kullanıcıya tekrar sormak daha güvenli.
+    """`text`, `pending`'in beklediği şeye çıplak bir cevap mı (ör. "1234")?
+    Kalıp dar tutuldu (tam uzunlukta rakam dizisi, IBAN kalıbı) — geniş bir
+    eşleşme yanlış bir bankacılık işlemini sessizce tetikleyebilir.
     """
     stripped = text.strip()
 

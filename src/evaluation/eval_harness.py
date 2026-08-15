@@ -1,12 +1,8 @@
-"""Küçük, dürüst bir değerlendirme aracı — RAGAS değil, bir benchmark paketi değil.
+"""Küçük bir değerlendirme aracı — RAGAS değil, bir benchmark paketi değil.
 
-Tek bir noktayı somut olarak göstermek için var: çoklu-ajan bir sistemin
-kalite iddiaları, "birkaç kere denedim, çalışıyor gibiydi" yerine *bir*
-tekrarlanabilir ölçümle desteklenmeli, küçük ve elle etiketlenmiş olsa bile.
-`INTENT_EVAL_SET`'i gerçek bir etiketli veri setiyle (ideal olarak gerçek
-destek transkriptlerinden) değiştirmek, bunu CI'ın her PR'da çalıştırabileceği
-gerçek bir regresyon kapısına dönüştürür; bugün bu kapının nasıl bir şekil
-alması gerektiğinin somut bir örneği.
+Elle etiketlenmiş küçük bir set olsa da tekrarlanabilir bir ölçüm sağlıyor;
+`INTENT_EVAL_SET` gerçek bir veri setiyle değiştirilirse CI'ın her PR'da
+çalıştırabileceği bir regresyon kapısına dönüşür.
 """
 
 from __future__ import annotations
@@ -97,11 +93,8 @@ def run_retrieval_eval(
     """Her sorgu için en üstteki alıntı, gerçekten onu yanıtlayan dokümandan mı geliyor?
 
     Bu retrieval precision@1, cevap kalitesi değil — bilinçli olarak LLM'e hiç
-    dokunmuyor: yanlış bir alıntı bir retriever hatası, doğru bir alıntının
-    kötü ifade edilmesi bir prompt/model meselesi — ikisini tek bir metrikte
-    karıştırmak ikisini de debug etmeyi zorlaştırırdı. RAG cevap kalitesinin
-    kendisi bu projenin sahip olmadığı, hakemli/etiketlenmiş bir veri seti
-    gerektirirdi; yerine koyma noktası `run_intent_eval` ile aynı şekilde.
+    dokunmuyor, yanlış alıntı (retriever hatası) ile kötü ifade edilmiş doğru
+    alıntıyı (prompt/model meselesi) karıştırmamak için.
     """
     correct = 0
     misses: list[tuple[str, str, str]] = []
@@ -128,10 +121,8 @@ if __name__ == "__main__":
     for text, expected, predicted in intent_result.misses:
         print(f"  MISS: {text!r} expected={expected} got={predicted}")
 
-    # Geçici bir dizinde tek kullanımlık bir koleksiyon, uygulamanın gerçek
-    # `data/vectorstore`'u değil — `add_documents`'ın içerik-bazlı bir dedup'ı
-    # yok, yani bunu canlı koleksiyona karşı tekrar çalıştırmak temiz bir sayı
-    # vermek yerine her çağrıda sessizce tekrarlanan chunk'lar biriktirirdi.
+    # Geçici, tek kullanımlık koleksiyon — `add_documents`'ın dedup'ı yok,
+    # canlı koleksiyona karşı çalıştırmak chunk'ları tekrar tekrar biriktirirdi.
     with tempfile.TemporaryDirectory() as tmp_dir:
         eval_settings = get_settings().model_copy(
             update={"chroma_persist_dir": tmp_dir, "chroma_collection": "eval-harness-cli"}

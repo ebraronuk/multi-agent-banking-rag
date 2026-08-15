@@ -21,10 +21,8 @@ class IntentLabel(StrEnum):
     TRANSACTION_ACTION = "TRANSACTION_ACTION"  # işlem geçmişi (son hareketler) sorgusu
     CARD_ACTION = "CARD_ACTION"  # blokla/kaldır/limit değişikliği
     SMALL_TALK = "SMALL_TALK"
-    # Kullanıcı açıkça bir insan istiyor VEYA bankacılıkla ilgili ama asistanın
-    # araçlarının kapsamadığı bir talepte bulunuyor (hesap açma, kredi başvurusu,
-    # para transferi/EFT çalıştırma — sadece list_transactions var, gönderen bir
-    # araç yok). İkisi de aynı yere gidiyor: gerçek bir insan gerekiyor.
+    # Kullanıcı açıkça insan istiyor VEYA asistanın araçlarının kapsamadığı
+    # bir talepte bulunuyor (hesap açma, para transferi çalıştırma...).
     ESCALATE = "ESCALATE"
     OUT_OF_SCOPE = "OUT_OF_SCOPE"
 

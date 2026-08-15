@@ -1,33 +1,10 @@
 """IntentLabel.ESCALATE ve IntentLabel.OUT_OF_SCOPE'u işler.
 
-Bilinçli olarak LLM'siz (bkz. ADR-013) — bir insana aktarım, tek bir statik
-mesaj değil, script'li bir akış: aktarım+temsilci karşılaması+kimlik
-doğrulama isteği tek bir turda (`verifying`) -> doğrulama başarılı, sorunu
-sor (`awaiting_issue`) -> sorunu kaydet, somut bir süre ver (`resolved`) ->
-kapanış (`None`'a döner). Aşama `agents/memory.py` üzerinden turlar arası
-taşınıyor (`carried_escalation_stage` bu turun girdisi, `escalation_stage`
-çıktısı).
-
-Aktarım + karşılama + doğrulama isteği tek turda birleşik: ayrı bir
-"merhaba, nasıl yardımcı olabilirim" turu beklemek hem gereksiz bir
-round-trip hem de kullanıcının hemen ardından yazdığı mesajı (genelde
-şikayetin kendisi) görmezden bırakıyordu. Sorun da sadece bir kez,
-doğrulamadan sonra soruluyor — gerçek bir banka desteğinin de yaptığı gibi
-önce kimlik, sonra konu.
-
-`escalation_stage` aktifken bu düğümün döndürdüğü `intent` her zaman
-`ESCALATE` — o turun ham sınıflandırması API'nin `intent` alanına sızmıyor
-(aksi halde Aylin'in mesajının altında yanlış bir etiket görünebiliyordu).
-`supervisor.py` da script aktifken sınıflandırmaya bakmadan doğrudan buraya
-yönlendiriyor — bir LLM'in "aktarım yapıldı mı" gibi bir mesajı yanlış
-sınıflandırıp (ör. "aktarım" kelimesinin iki anlamı yüzünden
-TRANSACTION_ACTION sanıp) akışı atlaması artık mümkün değil.
-
-LLM'siz olmasının sebebi bu yüzden çift: modelin bankanın tutamayacağı bir
-vaadi doğaçlaması riski (ADR-006/ADR-009 ile aynı ilke), ve yukarıdaki
-yanlış-sınıflandırma riski. Gerçek bir insan hiçbir aşamada bağlanmıyor —
-"Aylin" script'li, sabit bir persona; bu bir portföy demosu, gerçek bir
-müşteri hizmetleri kuyruğu yok.
+LLM'siz, script'li bir akış: aktarım+temsilci karşılaması+doğrulama isteği
+tek turda (`verifying`) -> sorunu al (`awaiting_issue`) -> kaydet + SLA ver
+(`resolved`) -> kapanış. Aşama `agents/memory.py` üzerinden taşınıyor
+(`carried_escalation_stage` girdi, `escalation_stage` çıktı). Gerekçe ve
+tasarım geçmişi: ADR-013.
 """
 
 from __future__ import annotations
@@ -65,11 +42,8 @@ _OUT_OF_SCOPE_MESSAGE = (
     "yönlendirebilirim."
 )
 
-# tool_agent bir entity isteyip (ör. IBAN) hiç cevap alamadığında değil, cevap
-# GELİP de beklenen formata uymadığında (ör. IBAN yerine "4321" yazılması)
-# devreye giriyor — bu turda hiçbir intent eşleşmediği için normalde yukarıdaki
-# genel _OUT_OF_SCOPE_MESSAGE'a düşerdi, ki bu da az önce sorulan soruyu
-# unutmuş gibi görünürdü (canlıda görüldü).
+# Beklenen formatta olmayan bir slot-fill cevabı (ör. IBAN yerine "4321")
+# için hedefli bir retry — genel _OUT_OF_SCOPE_MESSAGE'a düşmesin.
 _PENDING_RETRY_MESSAGES: dict[EntityType, str] = {
     EntityType.IBAN: (
         "Bu bir IBAN gibi görünmüyor. TR ile başlayan 26 haneli hesap numaranızı tam "
@@ -81,10 +55,8 @@ _PENDING_RETRY_MESSAGES: dict[EntityType, str] = {
     ),
 }
 
-# Gerçek bir hesap sorgusu değil (bkz. modül docstring'i) — bir NER entity'si
-# ya da banking_repository'ye karşı bir doğrulama değil, sadece "kullanıcı 4
-# haneli bir şey yazdı mı" kontrolü. Demo modunda herhangi bir 4 haneli
-# numara kabul ediliyor (arayüzde de belirtiliyor).
+# Gerçek bir doğrulama değil, sadece "4 haneli bir şey yazdı mı" kontrolü —
+# demo modunda herhangi bir 4 haneli numara kabul ediliyor (arayüzde belirtiliyor).
 _VERIFICATION_CODE_RE = re.compile(r"(?<!\d)\d{4}(?!\d)")
 _TIMING_FOLLOW_UP_RE = re.compile(r"ne zaman|kaç (gün|saat)|ne kadar sürer|süre", re.IGNORECASE)
 
@@ -118,11 +90,8 @@ def escalate_node(state: GraphState) -> dict[str, object]:
         return {
             "draft_answer": _PENDING_RETRY_MESSAGES[pending.entity_type],
             "escalation_stage": None,
-            # tool_agent'ın kendi missing-entity dalıyla aynı sözleşme: bir
-            # sonraki turn'de bare cevap (ör. "TR33...") ner_agent'taki bekleyen
-            # slot-doldurma yoluyla (ADR-008) tanınabilsin diye bunu taşıyoruz.
-            # Taşımasak memory_save bunu None'a yazardı, tek retry'lik bir
-            # hafıza kaybı olurdu.
+            # Bir sonraki turn'ün bare cevabını ADR-008'in slot-doldurma
+            # yoluyla tanıyabilmesi için taşınıyor.
             "pending_entity_request": pending,
             "trace": [
                 AgentTraceStep(
@@ -143,8 +112,6 @@ def _step(message: str, next_stage: str | None, summary: str) -> dict[str, objec
     return {
         "draft_answer": message,
         "escalation_stage": next_stage,
-        # Script aktifken raporlanan intent her zaman ESCALATE — o turun ham
-        # sınıflandırması ne olursa olsun (bkz. modül docstring'i).
-        "intent": IntentLabel.ESCALATE,
+        "intent": IntentLabel.ESCALATE,  # script aktifken ham sınıflandırma sızmaz
         "trace": [AgentTraceStep(node="escalate", summary=summary)],
     }

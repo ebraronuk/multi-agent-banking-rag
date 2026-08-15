@@ -1,12 +1,8 @@
 """Vektör benzerliğiyle harmanlanmış sözcüksel (BM25) yeniden sıralama.
 
-Sadece vektör benzerliği tam terim eşleşmelerini kaçırıyor — "FAST" ya da
-"KVKK" hakkında soran bir müşteri, birebir token örtüşmesini ödüllendiren
-sözcüksel bir sinyalden faydalanıyor; embedding'ler (özellikle offline'da
-kullanılan fake hash embedding) bunu az ağırlıklandırabiliyor. Birini seçmek
-yerine %50/%50 harmanlamak, bu demo'nun ölçeğinin gerektirmediği bir
-cross-encoder'ın maliyeti/gecikmesi olmadan hem anlamsal hem sözcüksel
-eşleşmeleri kapsıyor.
+Sadece vektör benzerliği tam terim eşleşmelerini ("FAST", "KVKK") kaçırabiliyor
+— %50/%50 harmanlamak, bir cross-encoder'ın maliyeti olmadan hem anlamsal hem
+sözcüksel eşleşmeleri kapsıyor.
 """
 
 from __future__ import annotations
@@ -14,6 +10,7 @@ from __future__ import annotations
 from langchain_core.documents import Document
 from rank_bm25 import BM25Okapi
 
+from nlp.text_utils import turkish_lower
 from schemas.dto import Citation
 
 _SNIPPET_LENGTH = 200
@@ -47,9 +44,7 @@ def rerank_with_bm25(
     if not candidates:
         return []
 
-    # BM25'in anlamlı bir korpus istatistiği üretebilmesi için en az iki
-    # doküman gerekiyor (IDF, tek bir doküman üzerinde tanımsız/dejenere); 0-1
-    # adayla yeniden sıralanacak bir şey yok, o yüzden vektör skoruna aynen düş.
+    # BM25'in IDF'i tek dokümanda tanımsız/dejenere — vektör skoruna aynen düş.
     if len(candidates) == 1:
         document, vector_score = candidates[0]
         return [_to_citation(document, vector_score)]
@@ -57,9 +52,9 @@ def rerank_with_bm25(
     documents = [document for document, _ in candidates]
     vector_scores = [score for _, score in candidates]
 
-    tokenized_corpus = [document.page_content.lower().split() for document in documents]
+    tokenized_corpus = [turkish_lower(document.page_content).split() for document in documents]
     bm25 = BM25Okapi(tokenized_corpus)
-    bm25_scores = list(bm25.get_scores(query.lower().split()))
+    bm25_scores = list(bm25.get_scores(turkish_lower(query).split()))
 
     normalized_vector = _min_max_normalize(vector_scores)
     normalized_bm25 = _min_max_normalize(bm25_scores)

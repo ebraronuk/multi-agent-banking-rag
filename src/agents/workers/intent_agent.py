@@ -1,15 +1,9 @@
 """Niyet sınıflandırmasını saran LangGraph düğümü.
 
-Grafikte `ner_agent`'tan sonra çalışır ki sınıflandırma zaten çıkarılmış
-varlıkları kullanabilsin (ör. bir CARD_LAST4 eşleşmesi CARD_ACTION'ı
-destekler) — kural tabanlı/LLM ayrımı ve fallback mantığı için bkz.
-`nlp/intent_classifier.py`.
-
-Ayrıca `state["carried_pending_request"]`'in tüketicisi (bkz. ADR-008): önceki
-turn belirli bir varlığı bekliyorduysa ve `ner_agent` bu turn tam olarak o
-varlığı bulduysa, bekleyen niyet sıfırdan yeniden sınıflandırılmak yerine
-aynen kullanılıyor — kural tabanlı sınıflandırıcının çıplak bir "1234" için
-hiçbir anahtar kelime sinyali yok, bunu OUT_OF_SCOPE olarak puanlardı.
+Grafikte `ner_agent`'tan sonra çalışır ki sınıflandırma çıkarılmış varlıkları
+kullanabilsin (bkz. `nlp/intent_classifier.py`). Ayrıca
+`state["carried_pending_request"]`'in tüketicisi (ADR-008): bekleyen bir slot
+bu turn dolduysa, niyet sıfırdan yeniden sınıflandırılmak yerine aynen kullanılır.
 """
 
 from __future__ import annotations
@@ -23,10 +17,8 @@ from agents.supervisor import TOOL_DRIVEN_INTENTS
 from nlp.intent_classifier import classify_intent
 from schemas.dto import AgentTraceStep, IntentLabel
 
-# Zincirlenebilir niyetler: tool_agent'ın işlediği üç kategori + RAG_QUERY +
-# SMALL_TALK ("EFT limitiniz ne kadar, bu arada merhaba" gibi bir selamlama
-# gayet doğal bir ikincil niyet). ESCALATE/OUT_OF_SCOPE dahil değil (bkz.
-# ADR-012) — bir insana aktarım isteği konuşmanın o an bittiği anlamına geliyor.
+# Zincirlenebilir niyetler (ADR-012). ESCALATE/OUT_OF_SCOPE dahil değil —
+# bir insana aktarım isteği konuşmanın o an bittiği anlamına geliyor.
 _CHAINABLE_INTENTS = frozenset(
     {*TOOL_DRIVEN_INTENTS, IntentLabel.RAG_QUERY, IntentLabel.SMALL_TALK}
 )

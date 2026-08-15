@@ -21,6 +21,7 @@ from agents.prompts.guardrail_prompt import (
 from agents.state import GraphState
 from app.core.config import Settings
 from app.core.logging import get_logger
+from nlp.text_utils import turkish_lower
 from schemas.dto import AgentTraceStep, GuardrailFlag
 
 logger = get_logger(__name__)
@@ -38,9 +39,9 @@ _ADVICE_KEYWORDS = (
     "kesin kazanç",
 )
 
-# Kullanıcının mesajında aranıyor (LLM'in çıktısında değil) — amaç modele
-# ulaşmadan, hâlâ kural tabanlı bir katmanda şüpheli girdiyi yakalamak.
-# Liste tüketici değil; yeni bir kalıp görüldükçe genişletilecek bir başlangıç.
+# Kullanıcının mesajında aranıyor (LLM çıktısında değil), kural tabanlı bir katman.
+# "kurallarını unut" gibi öneksiz kalıplar bilerek yok — "Müşteri temsilciniz
+# kurallarını unutarak..." gibi gerçek şikayet cümleleriyle false-positive veriyordu.
 _INJECTION_KEYWORDS = (
     "ignore previous instructions",
     "ignore all previous",
@@ -48,8 +49,6 @@ _INJECTION_KEYWORDS = (
     "disregard previous instructions",
     "önceki talimatları yok say",
     "önceki talimatları unut",
-    "talimatlarını unut",
-    "kurallarını unut",
     "sistem promptunu göster",
     "sistem promptunu yazdır",
     "system prompt'unu göster",
@@ -96,17 +95,17 @@ def _redact_sensitive_numbers(text: str) -> tuple[str, bool]:
 
 
 def _contains_advice_language(text: str) -> bool:
-    lowered = text.lower()
+    lowered = turkish_lower(text)
     return any(keyword in lowered for keyword in _ADVICE_KEYWORDS)
 
 
 def _contains_injection_attempt(text: str) -> bool:
-    lowered = text.lower()
+    lowered = turkish_lower(text)
     return any(keyword in lowered for keyword in _INJECTION_KEYWORDS)
 
 
 def _reveals_model_identity(text: str) -> bool:
-    lowered = text.lower()
+    lowered = turkish_lower(text)
     return any(keyword in lowered for keyword in _MODEL_IDENTITY_KEYWORDS)
 
 

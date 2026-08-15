@@ -19,10 +19,7 @@ def build_vectorstore(settings: Settings) -> Chroma:
         collection_name=settings.chroma_collection,
         embedding_function=get_embeddings(settings),
         persist_directory=settings.chroma_persist_dir,
-        # Chroma yeni koleksiyonlarda varsayılan olarak squared-L2 mesafesi
-        # kullanıyor, onun "relevance score"u [0, 1] aralığına sınırlı değil
-        # (negatif değerler mümkün) — `similarity_search_with_relevance_scores`
-        # cosine uzayını varsayıyor, `FakeHashEmbeddings`'in ürettiği
-        # L2-normalize vektörlerle de örtüşen bu.
+        # Varsayılan squared-L2 mesafesinin relevance score'u [0,1]'e sınırlı değil;
+        # `similarity_search_with_relevance_scores` cosine uzayını varsayıyor.
         collection_metadata={"hnsw:space": "cosine"},
     )

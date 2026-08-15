@@ -25,14 +25,12 @@ logger = get_logger(__name__)
 
 
 class FakeChatModel(BaseChatModel):
-    """LLM_PROVIDER=fake için offline yerine geçen deterministik model (CI, testler, anahtarsız).
+    """LLM_PROVIDER=fake için deterministik model (CI, testler, anahtarsız).
 
-    Gerçek bir modele çıkmak yerine son insan mesajının hash'ini alıyor, yani
-    aynı girdi her zaman aynı çıktıyı üretiyor — API kredisi harcamadan ya da
-    ağa çıkmadan graf davranışını testlerde snapshot'lamak için kullanışlı.
-    Araç-çağırma düğümleri bu modeli `bind_tools`'a güvenmek yerine doğrudan
-    özel olarak ele alıyor (bkz. `agents/workers/tool_agent.py`) — bir hash'in
-    "burada hangi araç geçerli" diye bir fikri yok çünkü.
+    Son insan mesajının hash'ini alır — aynı girdi her zaman aynı çıktıyı
+    üretir. Araç-çağırma düğümleri bunu `bind_tools`'a güvenmeden özel ele
+    alır (bkz. `agents/workers/tool_agent.py`), bir hash'in "hangi araç
+    geçerli" diye bir fikri yok çünkü.
     """
 
     response_prefix: str = "[fake-llm]"
@@ -50,11 +48,7 @@ class FakeChatModel(BaseChatModel):
     ) -> ChatResult:
         last_human = next((m.content for m in reversed(messages) if m.type == "human"), "")
         raw_digest = hashlib.sha256(str(last_human).encode()).hexdigest()[:8]
-        # Tirelerle ayrıldı ki bir hex digest hiçbir zaman 6+ haneli bir dizi
-        # içermesin: hex karakterleri 0-9a-f olduğu için düz 8 karakterlik bir
-        # digest kazara bir telefon/kart numarası parçasına benzeyebilir ve
-        # guardrail'in PII redaksiyonunu (agents/workers/guardrail_agent.py)
-        # tamamen zararsız bir sahte çıktı üzerinde tetikleyebilir.
+        # Tirelerle ayrıldı ki 6+ haneli bir dizi guardrail'in PII redaksiyonunu tetiklemesin.
         digest = "-".join(raw_digest[i : i + 2] for i in range(0, len(raw_digest), 2))
         content = f"{self.response_prefix} response-{digest}: {str(last_human)[:160]}"
         return ChatResult(generations=[ChatGeneration(message=AIMessage(content=content))])
@@ -111,13 +105,9 @@ def is_fake_model(model: BaseChatModel) -> bool:
 def content_to_text(content: object) -> str:
     """`AIMessage.content`'i düz metne çevirir.
 
-    LangChain'de bu alan her zaman `str` değil — bazı Gemini/Anthropic
-    modelleri (özellikle "thought signature"/grounding metadata taşıyan
-    yeni sürümler) `[{"type": "text", "text": "...", "extras": {...}}]`
-    gibi bir içerik-bloğu listesi döndürüyor. Buna körü körüne `str()`
-    çağırmak kullanıcıya ham bir Python repr'i gösterirdi (canlı doğrulandı:
-    `gemini-flash-latest` ile) — burada sadece metin bloklarını çıkarıp
-    birleştiriyoruz.
+    Bazı Gemini/Anthropic modelleri bu alanı `str` yerine bir içerik-bloğu
+    listesi döndürüyor (`[{"type": "text", "text": "...", ...}]`) — körü
+    körüne `str()` kullanıcıya ham bir Python repr'i gösterirdi.
     """
     if isinstance(content, str):
         return content
@@ -140,11 +130,8 @@ async def safe_ainvoke_message(
 ) -> AIMessage | None:
     """LLM'i çağırır, ham `AIMessage`'ı ya da çağrı patladıysa None döner.
 
-    Düz bir `BaseChatModel` ya da bağlı bir `Runnable` (`llm.bind_tools(...)`'un
-    döndürdüğü — tool_agent'ın akıl yürütme döngüsü bunu geçiyor) kabul eder,
-    ikisi de aynı `.ainvoke()` sözleşmesini paylaşıyor. Tam mesajı (sadece
-    `.content`'i değil) döndürmesinin sebebi, o döngünün `.tool_calls`'a da
-    ihtiyaç duyması, sadece metne değil.
+    `Runnable` (`llm.bind_tools(...)` çıktısı) da kabul eder; tam mesajı
+    döndürüyor çünkü tool_agent'ın akıl yürütme döngüsü `.tool_calls`'a da ihtiyaç duyuyor.
     """
     try:
         response = await llm.ainvoke(messages)
@@ -161,12 +148,8 @@ async def safe_ainvoke_message(
 async def safe_ainvoke(llm: BaseChatModel, messages: list[BaseMessage], *, node: str) -> str | None:
     """LLM'i çağırır, metnini ya da çağrı patladıysa None döner.
 
-    `rag_agent`/`smalltalk_agent`/`tool_agent`'ın deterministik yolu, üretim
-    çağrısını kendi try/except'ini üç kopya olarak yazmak yerine buradan
-    geçiriyor: gerçek bir Anthropic/OpenAI/Google kesintisi, timeout ya da
-    rate limit bu turn'ün cevabını bozmalı (set edilmemiş bir `draft_answer`
-    zaten `guardrail_agent.py`'nin NO_DRAFT_PRODUCED yoluna akıyor), tüm
-    `/chat` isteğini 500'e düşürmemeli.
+    Bir sağlayıcı kesintisi bu turn'ün cevabını bozmalı (boş `draft_answer`
+    guardrail'in NO_DRAFT_PRODUCED yoluna akar), tüm `/chat` isteğini 500'e düşürmemeli.
     """
     response = await safe_ainvoke_message(llm, messages, node=node)
     return content_to_text(response.content) if response is not None else None

@@ -1,10 +1,8 @@
-"""Wires every worker node into a single compiled LangGraph.
+"""Her worker düğümünü tek bir derlenmiş LangGraph'a bağlar.
 
-`build_graph(settings)` is the one place that knows about every module in the
-system — RAG, tools/MCP, NLP, guardrails. Everything it imports exposes a
-`build_x_node(...)` factory that closes over its own dependencies, so this
-file's job is dependency injection + edge wiring, never business logic. See
-docs/architecture.md for the diagram this function literally builds.
+`build_graph(settings)`, sistemdeki her modülü (RAG, tools/MCP, NLP, guardrail)
+tanıyan tek yer — işi bağımlılık enjeksiyonu + kenar kablolama, iş kuralı değil.
+Diyagram için bkz. docs/architecture.md.
 """
 
 from __future__ import annotations
@@ -55,13 +53,9 @@ def build_graph(settings: Settings) -> CompiledStateGraph:
 
     graph = StateGraph(GraphState)
 
-    # mypy can't prove `GraphState` (a `TypedDict`) satisfies langgraph's
-    # `StateLike` bound when the node comes back through a `Callable[...]`
-    # -typed factory return value rather than a bare top-level `def` — a
-    # structural-Protocol/TypedDict limitation in mypy itself, not a real type
-    # error (the two bare-function nodes below need no ignore; every
-    # factory-built one does). Runtime behaviour is verified by the full test
-    # suite in tests/integration and tests/e2e, which exercises every node.
+    # mypy, factory'den dönen `Callable[...]` tipli düğümler için GraphState'in
+    # StateLike'ı sağladığını kanıtlayamıyor (gerçek bir tip hatası değil) —
+    # her factory-built düğüm bu yüzden ignore alıyor, bare-function'lar almıyor.
     graph.add_node(NODE_MEMORY_LOAD, build_memory_load_node(memory))  # type: ignore[call-overload]
     graph.add_node(NODE_NER, build_ner_node(llm))  # type: ignore[call-overload]
     graph.add_node(NODE_INTENT, build_intent_node(llm))  # type: ignore[call-overload]
@@ -95,10 +89,8 @@ def build_graph(settings: Settings) -> CompiledStateGraph:
         },
     )
 
-    # rag/tool_agent/smalltalk üçü de supervisor'a geri dönüyor — kuyrukta
-    # başka bir niyet (extra_intents) bekleyip beklemediğine orada bakılıyor
-    # (bkz. ADR-012). escalate bilinçli olarak zincire dahil değil, doğrudan
-    # guardrail'e düşüyor: bir insana aktarım isteği turu bitiriyor sayılıyor.
+    # rag/tool_agent/smalltalk supervisor'a geri döner (extra_intents kuyruğu
+    # kontrolü için, ADR-012). escalate zincire dahil değil, direkt guardrail'e düşer.
     graph.add_edge(NODE_RAG_AGENT, NODE_SUPERVISOR)
     graph.add_edge(NODE_TOOL_AGENT, NODE_SUPERVISOR)
     graph.add_edge(NODE_SMALLTALK, NODE_SUPERVISOR)

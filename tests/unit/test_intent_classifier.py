@@ -47,6 +47,14 @@ def test_small_talk_english() -> None:
     assert 0.0 < confidence <= 0.95
 
 
+def test_small_talk_turkish_capital_i_dotted_greeting() -> None:
+    # "İyi akşamlar" — str.lower() Türkçe "İ"yi "i"+combining-dot'a çevirip
+    # "iyi akşam" alt-dize eşleşmesini bozuyordu (bkz. nlp/text_utils.turkish_lower).
+    intent, confidence = classify_intent_rule_based("İyi akşamlar, nasılsınız?", [])
+    assert intent == IntentLabel.SMALL_TALK
+    assert 0.0 < confidence <= 0.95
+
+
 def test_escalate_turkish() -> None:
     intent, confidence = classify_intent_rule_based(
         "Gerçek bir kişiyle, yani müşteri temsilcisiyle konuşmak istiyorum.", []

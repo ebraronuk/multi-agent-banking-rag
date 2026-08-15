@@ -31,13 +31,8 @@ def build_memory_load_node(
             "history": context.turns,
             "carried_pending_request": context.pending_entity_request,
             "carried_escalation_stage": context.escalation_stage,
-            # Varsayılan bir "değişmezse aynen taşı" değeri — escalate_node
-            # her zaman kendi çıkışında bunu bilinçli olarak overwrite ediyor,
-            # ama `awaiting_issue` sırasında bir RAG_QUERY escalate_node'u
-            # atlayıp rag_agent'a gidiyorsa (bkz. supervisor.py) bu turda
-            # kimse escalation_stage'i set etmez — bu satır olmasa aşama
-            # sessizce kaybolur, bir sonraki turda script hiç başlamamış gibi
-            # davranırdı.
+            # Varsayılan pass-through — awaiting_issue+RAG_QUERY turunda escalate_node
+            # atlanır (bkz. supervisor.py), bu satır olmasa aşama sessizce kaybolurdu.
             "escalation_stage": context.escalation_stage,
             "trace": [AgentTraceStep(node="memory_load", summary=summary)],
         }

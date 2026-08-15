@@ -36,22 +36,14 @@ class GraphState(TypedDict, total=False):
     intent_confidence: float | None
     entities: list[Entity]
 
-    # memory_agent tarafından ner_agent'tan önce yüklenir, bu turn için salt
-    # okunur girdi. carried_pending_request önceki turn'ün beklediği şey
-    # (ADR-008); pending_entity_request bu turn'ün kendi çıkışı — bilinçli
-    # olarak ayrı iki alan, biri diğerine karışırsa eski bir istek turn'ü
-    # geçtikten sonra da sessizce askıda kalabilir.
+    # carried_pending_request önceki turn'ün beklediği şey (ADR-008), salt okunur;
+    # pending_entity_request bu turn'ün kendi çıktısı — bilinçli olarak ayrı iki alan.
     history: list[ChatMessage]
     carried_pending_request: PendingEntityRequest | None
     pending_entity_request: PendingEntityRequest | None
 
-    # Aynı carried_X/X deseni, bu kez bir insana aktarımın hangi adımda
-    # olduğunu taşıyor (bkz. ADR-013): None | "handed_off" | "greeted" |
-    # "verifying". carried_escalation_stage önceki turn'den yüklenen (salt
-    # okunur), escalation_stage bu turn'ün çıktısı — escalate_node set eder,
-    # memory_save bir sonraki turn için kalıcı hale getirir (bkz.
-    # agents/workers/escalate_agent.py). Akış tamamlanınca (doğrulama
-    # başarılı) None'a dönüyor, konuşma normal akışa geri düşüyor.
+    # Aynı carried_X/X deseni, bu kez insana aktarımın hangi aşamada olduğunu
+    # taşıyor: None | "verifying" | "awaiting_issue" | "resolved" (ADR-013).
     carried_escalation_stage: str | None
     escalation_stage: str | None
 
@@ -67,10 +59,8 @@ class GraphState(TypedDict, total=False):
     next_node: str | None
     tool_agent_done: bool
 
-    # Tek mesajda birden fazla, farklı kategoriden niyet varsa (bkz. ADR-012)
-    # intent_agent birincili `intent`'e, gerisini bu kuyruğa yazar. supervisor
-    # aktif niyetin worker'ı bitince kuyruktan bir sonrakini çeker; her geçişin
-    # taslak cevabı collected_drafts'a düşer, hepsi bitince synthesizer birleştirir.
+    # Çoklu-niyet mesajlarda intent_agent birincili `intent`'e, gerisini bu
+    # kuyruğa yazar; supervisor sırayla işler, synthesizer birleştirir (ADR-012).
     extra_intents: list[IntentLabel]
     collected_drafts: Annotated[list[str], operator.add]
     worker_pass_done: bool

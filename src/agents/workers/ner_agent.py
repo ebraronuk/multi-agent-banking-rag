@@ -6,10 +6,8 @@ ADR-008) ve normal çıkarımına ek olarak, tek başına hiçbir anahtar kelime
 anchor'lanamayan çıplak bir takip cevabını ("1234") tanıyabiliyor.
 
 Ayrıca IBAN/kart son 4 hane gibi "kimlik" entity'lerini, bu turda tekrar
-verilmemişse geçmiş turlardan geri çağırıyor (bkz. `_recall_entities_from_history`)
-— canlı regresyon: "IBAN'ım X, bakiyemi göster" sonrası "peki son işlemlerim
-neler?" sorulduğunda sistem IBAN'ı sanki hiç verilmemiş gibi tekrar soruyordu,
-oysa aynı konuşmada birkaç turn önce zaten verilmişti.
+verilmemişse geçmiş turlardan geri çağırıyor (`_recall_entities_from_history`)
+— aynı konuşmada bir kez verilen bir IBAN sonraki turlarda tekrar sorulmasın.
 """
 
 from __future__ import annotations

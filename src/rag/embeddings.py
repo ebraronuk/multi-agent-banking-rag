@@ -1,10 +1,9 @@
 """Retrieval pipeline'ın embedding backend'leri.
 
-`FakeHashEmbeddings` Tüm sistemin (ingestion, retrieval, RAG
-ajanı, CI) sıfır API anahtarı ve sıfır ağ erişimiyle uçtan uca çalışabilmesi
-için var. Retrieval kalitesi gerçek bir embedding modelinden açıkça daha
-düşük (eş anlamlılık ya da anlam bilgisi yok, sadece paylaşılan token'lar)
-`EMBEDDING_PROVIDER=openai`, hiçbir çağıran kodu değiştirmeden gerçek embedding'lere geçiyor.
+`FakeHashEmbeddings`, tüm sistemin sıfır API anahtarı ve sıfır ağ erişimiyle
+uçtan uca çalışabilmesi için var — kalitesi gerçek bir modelden düşük (sadece
+paylaşılan token'lar, anlam bilgisi yok). `EMBEDDING_PROVIDER=openai` hiçbir
+çağıran kodu değiştirmeden gerçek embedding'lere geçiyor.
 """
 
 from __future__ import annotations
@@ -15,6 +14,7 @@ import math
 from langchain_core.embeddings import Embeddings
 
 from app.core.config import EmbeddingProvider, Settings
+from nlp.text_utils import turkish_lower
 
 _DIMENSIONS = 384
 
@@ -22,10 +22,8 @@ _DIMENSIONS = 384
 class FakeHashEmbeddings(Embeddings):
     """Feature-hashing bag-of-words embedding, cosine benzerliği için L2-normalize.
 
-    Her token, deterministik bir işaretle `_DIMENSIONS` bucket'ından birine
-    hash'leniyor — ortak token paylaşan iki metin pozitif cosine benzerliğine,
-    alakasız metinler neredeyse ortogonale düşüyor. Gerçek bir model olmadan
-    hibrit retriever'ı ve reranker'ı çalıştırmaya yetecek kadar sinyal.
+    Ortak token paylaşan iki metin pozitif cosine benzerliğine, alakasız
+    metinler neredeyse ortogonale düşer — hibrit retriever/reranker'ı çalıştırmaya yeter.
     """
 
     def __init__(self, dimensions: int = _DIMENSIONS) -> None:
@@ -39,7 +37,7 @@ class FakeHashEmbeddings(Embeddings):
 
     def _embed(self, text: str) -> list[float]:
         vector = [0.0] * self.dimensions
-        tokens = text.lower().split() or [""]
+        tokens = turkish_lower(text).split() or [""]
 
         for token in tokens:
             digest = hashlib.sha256(token.encode("utf-8")).digest()
@@ -54,12 +52,8 @@ class FakeHashEmbeddings(Embeddings):
 
 
 def get_embeddings(settings: Settings) -> Embeddings:
-    """Yapılandırılmış ve bir anahtar varsa gerçek embedding, yoksa fake.
-
-    `app.core.llm.get_chat_model`'in fail-open-to-fake davranışını
-    yansıtıyor: yanlış yapılandırılmış ya da anahtarsız bir ortam import
-    zamanında çökmek yerine yine de (düşük kaliteli) trafiği servis etmeli.
-    """
+    """Yapılandırılmış ve bir anahtar varsa gerçek embedding, yoksa fake
+    (aynı fail-open davranışı, bkz. `app.core.llm.get_chat_model`)."""
     if settings.embedding_provider == EmbeddingProvider.OPENAI and settings.openai_api_key:
         from langchain_openai import OpenAIEmbeddings
         from pydantic import SecretStr

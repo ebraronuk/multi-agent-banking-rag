@@ -19,18 +19,18 @@ from pydantic import BaseModel, Field
 from agents.prompts.ner_prompt import NER_SYSTEM_PROMPT
 from app.core.llm import is_fake_model
 from app.core.logging import get_logger
+from nlp.text_utils import turkish_lower
 from schemas.dto import Entity, EntityType
 
 logger = get_logger(__name__)
 
-# TR IBAN: "TR" + 2 check digits + 5 groups of 4 + a final 2 = 26 characters,
-# with optional single spaces between groups (how humans actually type them).
+# TR IBAN: "TR" + 2 kontrol hanesi + 5x4 grup + son 2 hane = 26 karakter,
+# gruplar arası tekli boşluklar opsiyonel (insanların yazma şekli).
 _IBAN_RE = re.compile(r"\bTR\d{2}(?:\s?\d{4}){5}\s?\d{2}\b", re.IGNORECASE)
 
-# Amount with a currency symbol glued to the front ("€200", "$50").
-# Amount with a currency code/word trailing it ("500 TRY", "200 euro").
-# Two named-group sets (not one shared set) because Python's `re` forbids
-# reusing a group name across alternation branches.
+# Önde para birimi sembolü ("€200") ya da sonda kod/kelime ("500 TRY").
+# İki ayrı named-group seti: Python'ın `re`'si alternation dallarında aynı
+# grup adını tekrar kullanmaya izin vermiyor.
 _AMOUNT_CURRENCY_RE = re.compile(
     r"(?P<symbol>[€$£])\s?(?P<amt1>\d+(?:[.,]\d{3})*(?:[.,]\d{1,2})?)"
     r"|"
@@ -59,12 +59,11 @@ _CURRENCY_ISO_MAP = {
 _DATE_DMY_RE = re.compile(r"\b(?P<day>\d{1,2})[./](?P<month>\d{1,2})[./](?P<year>\d{4})\b")
 _DATE_YMD_RE = re.compile(r"\b(?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})\b")
 
-# "**** 1234" / "****1234" style masking.
+# "**** 1234" / "****1234" tarzı maskeleme.
 _CARD_MASK_RE = re.compile(r"\*{2,}\s?(?P<last4>\d{4})(?!\d)")
-# A card-related keyword followed, within a short window, by exactly 4 digits
-# not adjacent to other digits. The window uses `.` (not `[^\d]`) because
-# Turkish phrasing like "son 4 hanesi" ("last 4 digits") embeds an unrelated
-# single digit between the keyword and the real target.
+# "kart" kelimesinden kısa bir pencere sonra 4 haneli bir sayı. Pencere
+# `[^\d]` değil `.` kullanıyor çünkü "son 4 hanesi" gibi ifadeler anahtar
+# kelimeyle hedef arasına alakasız tek bir rakam sıkıştırabiliyor.
 _CARD_KEYWORD_RE = re.compile(r"kart\w*.{0,30}?(?<!\d)(?P<last4>\d{4})(?!\d)", re.IGNORECASE)
 
 _ACCOUNT_TYPE_VOCAB = (
@@ -81,15 +80,10 @@ _ACCOUNT_TYPE_PATTERNS = tuple(
 
 
 def _normalize_amount(raw: str) -> str:
-    """Collapse Turkish (1.250,50) and plain (500 / 50,00) formats to a bare
-    numeric string with '.' as the decimal separator, the shape the rest of
-    the system expects (see `schemas.dto.Entity.normalized`).
-
-    When both '.' and ',' are present, whichever appears last is treated as
-    the decimal separator (handles both Turkish and US thousands/decimal
-    conventions). When only one separator is present, it's treated as
-    decimal only if exactly 2 digits follow it — otherwise as a thousands
-    separator and stripped.
+    """Türkçe (1.250,50) ve düz (500 / 50,00) formatları, sistemin beklediği
+    '.' ondalık ayraçlı düz sayı string'ine indirger. İki ayraç da varsa
+    sonuncusu ondalık sayılır; tek ayraç varsa ardından tam 2 hane geliyorsa
+    ondalık, aksi halde binlik ayracı sayılıp atılır.
     """
     has_dot = "." in raw
     has_comma = "," in raw
@@ -268,7 +262,7 @@ class _NERExtraction(BaseModel):
 
 
 def _dedup_key(entity_type: EntityType, value: str) -> tuple[EntityType, str]:
-    return entity_type, value.strip().lower()
+    return entity_type, turkish_lower(value.strip())
 
 
 async def extract_entities_with_llm(text: str, llm: BaseChatModel) -> list[Entity]:
