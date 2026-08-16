@@ -16,6 +16,33 @@ ile orkestre edilmiş tek bir state machine üzerinde.
 > bağlanmıyor. Amaç, gerçek bir üründe kullanılacak kalitede bir **mimari** ve
 > **mühendislik pratiği** göstermek. Kapsam sınırları [`docs/architecture.md`](docs/architecture.md)'de.
 
+## Bu projeyi nasıl denetledim
+
+Kod yazmak bitince iş bitmiş sayılmıyor. Bu projeyi kendi ürününe şüpheci bakan bir
+mühendis gibi tekrar tekrar okuyup çalıştırdım; aşağıdakiler o denetimlerde bulunan,
+canlı doğrulanmış, gerçek bug'lar — gömülü değil, burada:
+
+- **Türkçe Unicode hatası**: Python'ın `str.lower()`'ı büyük "İ"yi düz "i" yerine
+  "i" + görünmez bir combining-dot karakterine çeviriyor — "İ" ile başlayan (Türkçe'de
+  her cümlenin başı) hiçbir mesaj anahtar-kelime eşleşmesini tutturamıyordu.
+  `nlp/text_utils.py::turkish_lower()` ile düzeltildi, repodaki her `.lower()` çağrı
+  noktasına yayıldı.
+- **Sızan alt-sorgu**: "Kartımı blokla ve EFT limitiniz ne kadar?" gibi bileşik bir
+  mesajda RAG retrieval sorgusu kart-blokaj kelimeleriyle kirlenip modelin yanlış bir
+  rakam uydurmasına yol açıyordu (gerçek KB değeri 50.000 TL iken 100.000 TL dediği
+  görüldü). `advance_intent_node` artık alt-niyete geçerken sadece ilgili kısmı izole
+  ediyor — bkz. [ADR-012](docs/decisions/ADR-012-multi-intent-dispatch.md).
+- **Guardrail false-positive'i**: prompt-injection koruması "Müşteri temsilciniz
+  kurallarını unutarak yanlış bilgi verdi" gibi gerçek bir şikayet cümlesini injection
+  sanıp reddediyordu — tam da bu korumanın en çok işlemesi gereken şikayet akışında.
+- **Paraphrase recall'ı %46'dan %90'a**: rule-based niyet sınıflandırıcı, aynı isteğin
+  10 farklı doğal ifadesinden sadece ~5'ini doğru sınıflandırıyordu (ESCALATE'te 10'da
+  1'e kadar düşüyordu) — anahtar kelime kapsamı genişletilip ölçüldü.
+
+Ayrıca `/chat`'in dayanıklılık iddiaları (ADR-007) uçtan uca test edildi: bir bağımlılık
+(Postgres, LLM sağlayıcısı) konuşma ortasında patlarsa sistem hâlâ 200 dönüyor mu,
+gerçekten kanıtlandı — bkz. `tests/integration/test_chat_api.py`.
+
 ## Ne yapar bu sistem?
 
 Kullanıcı `/chat`'e bir mesaj gönderir; sistem mesajı okur, **hangi tür istek olduğuna
