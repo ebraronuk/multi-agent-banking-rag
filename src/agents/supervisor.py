@@ -10,10 +10,15 @@ zaten kullanıyor. Bkz. docs/decisions/ADR-002-supervisor-routing.md.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import HumanMessage, SystemMessage
+
+from agents.prompts.sub_query_prompt import SUB_QUERY_ISOLATION_SYSTEM_PROMPT
 from agents.state import GraphState
 from app.core.config import Settings
+from app.core.llm import is_fake_model, safe_ainvoke
 from app.core.logging import get_logger
 from schemas.dto import AgentTraceStep, IntentLabel
 
@@ -70,25 +75,61 @@ def _advance_or_finish(state: GraphState) -> str:
     return _finish_only(state)
 
 
-def advance_intent_node(state: GraphState) -> dict[str, object]:
-    """Kuyruktaki bir sonraki niyeti aktif yapar, bu pass'in taslağını sentez
-    listesine ekler. LLM'siz, saf bir state geçişi — supervisor_node gibi.
-    """
-    extra = list(state.get("extra_intents", []))
-    next_intent = extra.pop(0)
-    finished_draft = state.get("draft_answer")
+async def _isolate_sub_query(full_text: str, target_intent: IntentLabel, llm: BaseChatModel) -> str:
+    """`full_text`'in yalnızca `target_intent`'le ilgili kısmını döner.
 
-    return {
-        "intent": next_intent,
-        "extra_intents": extra,
-        "collected_drafts": [finished_draft] if finished_draft else [],
-        "draft_answer": None,
-        "worker_pass_done": False,
-        "tool_agent_done": False,
-        "trace": [
-            AgentTraceStep(node=NODE_ADVANCE_INTENT, summary=f"advancing to extra intent={next_intent}")
+    Sadece gerçek modda çağrılır (bkz. çağıran); başarısız olursa da tam
+    metne düşer — rag_agent/synthesizer'daki aynı fail-open desen.
+    """
+    isolated = await safe_ainvoke(
+        llm,
+        [
+            SystemMessage(content=SUB_QUERY_ISOLATION_SYSTEM_PROMPT),
+            HumanMessage(content=f"Konu: {target_intent}\n\nMesaj: {full_text}"),
         ],
-    }
+        node=NODE_ADVANCE_INTENT,
+    )
+    return isolated or full_text
+
+
+def build_advance_intent_node(
+    llm: BaseChatModel,
+) -> Callable[[GraphState], Awaitable[dict[str, object]]]:
+    """Kuyruktaki bir sonraki niyeti aktif yapar, bu pass'in taslağını sentez
+    listesine ekler.
+
+    RAG_QUERY'ye geçerken (gerçek modda) mesajın sadece o kısmını izole edip
+    `active_sub_query`'ye yazar — aksi halde rag_agent bileşik mesajın tamamını
+    arıyor, retrieval kalitesi düşüyor (ADR-012'nin bilinen sınırıydı, artık
+    RAG_QUERY için düzeltildi). Diğer niyetler tam mesajı almaya devam ediyor;
+    onlar entity-grounded çalıştığı için gürültüden aynı ölçüde etkilenmiyor.
+    """
+
+    async def advance_intent_node(state: GraphState) -> dict[str, object]:
+        extra = list(state.get("extra_intents", []))
+        next_intent = extra.pop(0)
+        finished_draft = state.get("draft_answer")
+
+        active_sub_query = None
+        if next_intent == IntentLabel.RAG_QUERY and not is_fake_model(llm):
+            active_sub_query = await _isolate_sub_query(state["user_query"], next_intent, llm)
+
+        return {
+            "intent": next_intent,
+            "extra_intents": extra,
+            "collected_drafts": [finished_draft] if finished_draft else [],
+            "draft_answer": None,
+            "worker_pass_done": False,
+            "tool_agent_done": False,
+            "active_sub_query": active_sub_query,
+            "trace": [
+                AgentTraceStep(
+                    node=NODE_ADVANCE_INTENT, summary=f"advancing to extra intent={next_intent}"
+                )
+            ],
+        }
+
+    return advance_intent_node
 
 
 def build_supervisor_router(settings: Settings) -> Callable[[GraphState], str]:

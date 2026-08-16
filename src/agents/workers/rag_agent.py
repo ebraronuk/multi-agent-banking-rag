@@ -32,7 +32,11 @@ def build_rag_node(
     retriever: HybridRetriever, llm: BaseChatModel
 ) -> Callable[[GraphState], Awaitable[dict[str, object]]]:
     async def rag_node(state: GraphState) -> dict[str, object]:
-        citations = retriever.retrieve(state["user_query"])
+        # Bileşik bir mesajda (ADR-012) advance_intent_node bu alanı izole
+        # edilmiş bir alt-sorguyla doldurmuş olabilir — tam mesaj yerine bu
+        # tercih edilir, aksi halde diğer niyetin metni retrieval'ı bozar.
+        query = state.get("active_sub_query") or state["user_query"]
+        citations = retriever.retrieve(query)
         context = _build_context_block(citations)
 
         draft_answer = await safe_ainvoke(
@@ -40,7 +44,7 @@ def build_rag_node(
             [
                 SystemMessage(content=RAG_SYSTEM_PROMPT),
                 *history_to_messages(state.get("history", [])),
-                HumanMessage(content=f"Bağlam:\n{context}\n\nSoru: {state['user_query']}"),
+                HumanMessage(content=f"Bağlam:\n{context}\n\nSoru: {query}"),
             ],
             node="rag_agent",
         )

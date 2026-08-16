@@ -65,6 +65,11 @@ class GraphState(TypedDict, total=False):
     collected_drafts: Annotated[list[str], operator.add]
     worker_pass_done: bool
 
+    # advance_intent_node ikinci+ niyete geçerken (gerçek modda) mesajın sadece
+    # o niyetle ilgili kısmını izole edip buraya yazar — rag_agent, bileşik
+    # mesajın tamamı yerine bunu tercih eder (RAG retrieval'ı gürültüden korur).
+    active_sub_query: str | None
+
 
 def new_state(conversation_id: str, user_query: str) -> GraphState:
     """Bir konuşmanın tek bir turn'ü için taze bir GraphState kurar.
@@ -97,4 +102,5 @@ def new_state(conversation_id: str, user_query: str) -> GraphState:
         extra_intents=[],
         collected_drafts=[],
         worker_pass_done=False,
+        active_sub_query=None,
     )

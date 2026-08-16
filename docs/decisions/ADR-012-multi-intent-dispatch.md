@@ -101,15 +101,16 @@ dahil edildi.
   düşükse bir uyarı ekle" gibi) — her pass birbirinden bağımsız çalışıyor, birinin çıktısı
   diğerinin girdisi olmuyor. Bu, README'nin daha önce de belirttiği "çok adımlı planlama"
   sınırıyla aynı yerde duruyor; çözümü ayrı bir ADR'yi hak eder.
-- ❌ **Düzeltilmedi, açık bir sorun:** her alt-niyet geçişi hâlâ `state["user_query"]`'nin
-  TAMAMINI görüyor — kendi bölümüne izole edilmiş bir alt-sorgu metni yok. Canlıda gözlemlendi:
-  "Kartımı blokla ve EFT limitiniz ne kadar?" gibi bileşik bir mesajda `rag_agent`'ın retrieval
-  sorgusu kart-blokaj kelimeleriyle kirleniyor, daha zayıf/alakasız citation'lar geliyor, model
-  de boşluğu **yanlış bir rakam uydurarak** dolduruyor (gerçek KB değeri 50.000 TL iken
-  "100.000 TL" dediği görüldü — tek başına "EFT limitiniz ne kadar?" sorulduğunda doğru
-  cevap geliyor). Düzgün çözümü, intent classifier'ın her ek niyet için sadece etiketi değil,
-  ilgili metin parçasını (sub-query) da döndürmesini gerektirir — bu ADR'nin kapsamına
-  alınmadı, ayrı bir işi hak ediyor.
+- ✅ (sonradan düzeltildi) Her alt-niyet geçişi `state["user_query"]`'nin TAMAMINI görüyordu —
+  kendi bölümüne izole edilmiş bir alt-sorgu metni yoktu. Canlıda gözlemlenmişti: "Kartımı
+  blokla ve EFT limitiniz ne kadar?" gibi bileşik bir mesajda `rag_agent`'ın retrieval sorgusu
+  kart-blokaj kelimeleriyle kirleniyor, daha zayıf/alakasız citation'lar geliyor, model de
+  boşluğu **yanlış bir rakam uydurarak** dolduruyordu (gerçek KB değeri 50.000 TL iken
+  "100.000 TL" dediği görüldü). Düzeltme: `supervisor.py::build_advance_intent_node`, RAG_QUERY'ye
+  geçerken (yalnızca gerçek modda — fake modda no-op) mesajın sadece o kısmını izole edip
+  `state["active_sub_query"]`'ye yazıyor; `rag_agent` bunu tam mesaj yerine tercih ediyor.
+  CARD_ACTION/ACCOUNT_ACTION/TRANSACTION_ACTION'a genişletilmedi — onlar entity-grounded
+  çalıştığı için (bkz. `_validate_tool_args`) gürültülü metinden aynı ölçüde etkilenmiyor.
 - ❌ `max_agent_iterations` tüm turun genelinde tek bir sayaç — bileşik bir istek + her
   parçasında uzun bir `tool_agent` döngüsü aynı anda olursa, ikinci niyet hiç işlenmeden
   limite takılabilir. Demo ölçeğinde (varsayılan limit 6) gözlemlenmedi.

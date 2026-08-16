@@ -263,10 +263,9 @@ merkezinde, bu yüzden izlenebilirlik sona eklenen bir özellik değil.
   bu demo'nun kapsamı dışında bırakıldı (bkz. ADR-010).
 - LLM tabanlı NER geçişi karakter offset'i vermiyor (`start`/`end` boş kalıyor) —
   regex'in bulduklarıyla dedup, tip + normalize-değer eşleşmesine dayanıyor (bkz. ADR-011).
-- **Açık bir sorun, düzeltilmedi:** çoklu-niyet dispatch'te (ADR-012) her alt-niyet hâlâ
-  kullanıcının tam mesajını görüyor, izole bir alt-sorgu değil — bileşik bir mesajda RAG
-  retrieval kalitesi düşüp modelin yanlış bir rakam uydurmasına yol açabiliyor (canlıda
-  gözlemlendi).
+- Çoklu-niyet dispatch'te (ADR-012) RAG_QUERY dışındaki alt-niyetler (CARD_ACTION,
+  ACCOUNT_ACTION...) hâlâ kullanıcının tam mesajını görüyor — bunlar entity-grounded
+  çalıştığı için sorun yaratmıyor, ama izole alt-sorgu şu an sadece RAG_QUERY için var.
 
 ## Kubernetes
 

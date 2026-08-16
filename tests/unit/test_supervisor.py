@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from langchain_core.messages import AIMessage
+
 from agents.state import new_state
 from agents.supervisor import (
     NODE_ADVANCE_INTENT,
@@ -9,11 +11,20 @@ from agents.supervisor import (
     NODE_SMALLTALK,
     NODE_SYNTHESIZER,
     NODE_TOOL_AGENT,
-    advance_intent_node,
+    build_advance_intent_node,
     build_supervisor_router,
 )
 from app.core.config import Settings
+from app.core.llm import FakeChatModel
 from schemas.dto import IntentLabel
+
+
+class _StubIsolationModel:
+    def __init__(self, response_text: str) -> None:
+        self._response_text = response_text
+
+    async def ainvoke(self, messages: object) -> AIMessage:
+        return AIMessage(content=self._response_text)
 
 
 def _settings(max_iterations: int = 6) -> Settings:
@@ -203,14 +214,15 @@ def test_iteration_cap_never_advances_to_extra_intent() -> None:
     assert route(state) == NODE_GUARDRAIL
 
 
-def test_advance_intent_node_pops_queue_and_resets_pass_flags() -> None:
+async def test_advance_intent_node_pops_queue_and_resets_pass_flags() -> None:
+    node = build_advance_intent_node(FakeChatModel())
     state = new_state("c1", "kartımı blokla ve EFT limitiniz ne kadar")
     state["extra_intents"] = [IntentLabel.RAG_QUERY, IntentLabel.SMALL_TALK]
     state["draft_answer"] = "kartınız bloklandı"
     state["worker_pass_done"] = True
     state["tool_agent_done"] = True
 
-    result = advance_intent_node(state)
+    result = await node(state)
 
     assert result["intent"] == IntentLabel.RAG_QUERY
     assert result["extra_intents"] == [IntentLabel.SMALL_TALK]
@@ -220,11 +232,51 @@ def test_advance_intent_node_pops_queue_and_resets_pass_flags() -> None:
     assert result["tool_agent_done"] is False
 
 
-def test_advance_intent_node_does_not_collect_an_empty_draft() -> None:
+async def test_advance_intent_node_does_not_collect_an_empty_draft() -> None:
+    node = build_advance_intent_node(FakeChatModel())
     state = new_state("c1", "kartımı blokla ve EFT limitiniz ne kadar")
     state["extra_intents"] = [IntentLabel.RAG_QUERY]
     state["draft_answer"] = None
 
-    result = advance_intent_node(state)
+    result = await node(state)
 
     assert result["collected_drafts"] == []
+
+
+async def test_advance_intent_node_fake_model_leaves_active_sub_query_unset() -> None:
+    # Fake modda no-op: sub-query izolasyonu için gerçek bir model yok,
+    # rag_agent tam mesajla çalışmaya devam ediyor (mevcut davranış).
+    node = build_advance_intent_node(FakeChatModel())
+    state = new_state("c1", "kartımı blokla ve EFT limitiniz ne kadar")
+    state["extra_intents"] = [IntentLabel.RAG_QUERY]
+
+    result = await node(state)
+
+    assert result["active_sub_query"] is None
+
+
+async def test_advance_intent_node_real_model_isolates_rag_sub_query() -> None:
+    # Regresyon (ADR-012'nin bilinen sınırı): bileşik bir mesajın tamamı
+    # RAG'e gidince retrieval kalitesi düşüyordu — artık gerçek modda sadece
+    # ilgili kısım izole edilip active_sub_query'ye yazılıyor.
+    stub = _StubIsolationModel("EFT limitiniz ne kadar")
+    node = build_advance_intent_node(stub)  # type: ignore[arg-type]
+    state = new_state("c1", "kartımı blokla ve EFT limitiniz ne kadar")
+    state["extra_intents"] = [IntentLabel.RAG_QUERY]
+
+    result = await node(state)
+
+    assert result["active_sub_query"] == "EFT limitiniz ne kadar"
+
+
+async def test_advance_intent_node_only_isolates_for_rag_query() -> None:
+    # Diğer niyetler (SMALL_TALK, tool-driven) entity-grounded ya da düşük
+    # riskli çalışıyor — izolasyon maliyeti sadece RAG_QUERY için gerekli.
+    stub = _StubIsolationModel("bu hiç çağrılmamalı")
+    node = build_advance_intent_node(stub)  # type: ignore[arg-type]
+    state = new_state("c1", "kartımı blokla ve merhaba")
+    state["extra_intents"] = [IntentLabel.SMALL_TALK]
+
+    result = await node(state)
+
+    assert result["active_sub_query"] is None

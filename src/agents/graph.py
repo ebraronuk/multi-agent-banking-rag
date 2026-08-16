@@ -20,7 +20,7 @@ from agents.supervisor import (
     NODE_SMALLTALK,
     NODE_SYNTHESIZER,
     NODE_TOOL_AGENT,
-    advance_intent_node,
+    build_advance_intent_node,
     build_supervisor_router,
     supervisor_node,
 )
@@ -65,7 +65,7 @@ def build_graph(settings: Settings) -> CompiledStateGraph:
     graph.add_node(NODE_TOOL_AGENT, tool_agent_node)  # type: ignore[arg-type]
     graph.add_node(NODE_SMALLTALK, build_smalltalk_node(llm))  # type: ignore[arg-type]
     graph.add_node(NODE_ESCALATE, escalate_node)
-    graph.add_node(NODE_ADVANCE_INTENT, advance_intent_node)
+    graph.add_node(NODE_ADVANCE_INTENT, build_advance_intent_node(llm))  # type: ignore[arg-type]
     graph.add_node(NODE_SYNTHESIZER, build_synthesizer_node(llm))  # type: ignore[arg-type]
     graph.add_node(NODE_GUARDRAIL, build_guardrail_node(settings))  # type: ignore[arg-type]
     graph.add_node(NODE_MEMORY_SAVE, build_memory_save_node(memory, settings))  # type: ignore[arg-type]
