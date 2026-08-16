@@ -11,6 +11,8 @@ from collections.abc import AsyncIterator
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from agents.prompts.guardrail_prompt import NO_DRAFT_FALLBACK_MESSAGE
+from app.core.llm import FakeChatModel
 from app.main import app
 from mcp_server.tools.banking_repository import _fallback_repository
 
@@ -164,3 +166,45 @@ async def test_multi_turn_slot_fill_completes_a_card_action_across_two_requests(
         for card in account["cards"]:  # type: ignore[union-attr]
             if card["last4"] == "4321":
                 card["status"] = "active"
+
+
+async def test_chat_survives_a_downstream_tool_failure_without_500(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ADR-007'nin dayanıklılık iddiasının uçtan uca kanıtı: bileşen-seviyesi
+    fail-open testleri (test_postgres_banking_repository.py, test_mcp_client.py)
+    zaten var, ama gerçek bir konuşma ortasında bağımlılık patlarsa /chat'in
+    TAMAMI hâlâ 200 dönüyor mu diye hiç kimse doğrulamamıştı."""
+
+    async def _boom(*args: object, **kwargs: object) -> dict[str, object]:
+        raise RuntimeError("simulated database outage")
+
+    monkeypatch.setattr(_fallback_repository, "get_balance", _boom)
+
+    response = await client.post(
+        "/chat", json={"message": "bakiyem ne kadar, IBAN TR330006100519786457841326"}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["answer"]
+    assert body["tool_calls"][0]["ok"] is False
+
+
+async def test_chat_survives_a_total_llm_outage_without_500(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Aynı kanıt, LLM sağlayıcısı tarafı için: `safe_ainvoke` bir istisnayı
+    yutup None döndürüyor iddiası vardı (ADR-007) — burada gerçekten kanıtlanıyor."""
+
+    def _boom(self: object, *args: object, **kwargs: object) -> object:
+        raise RuntimeError("simulated provider outage")
+
+    monkeypatch.setattr(FakeChatModel, "_generate", _boom)
+
+    response = await client.post("/chat", json={"message": "EFT limitiniz ne kadar?"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["answer"] == NO_DRAFT_FALLBACK_MESSAGE
+    assert "NO_DRAFT_PRODUCED" in body["guardrail_flags"]

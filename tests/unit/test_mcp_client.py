@@ -11,7 +11,8 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
-from agents.tools.mcp_client import InProcessToolClient, MCPToolClient
+from agents.tools.mcp_client import InProcessToolClient, MCPToolClient, get_tool_client
+from app.core.config import LLMProvider, Settings
 from mcp_server.tools.banking_repository import SEED_ACCOUNTS, InMemoryBankingRepository
 from schemas.dto import ToolCallRecord
 
@@ -130,3 +131,15 @@ async def test_mcp_client_never_raises_on_connection_failure() -> None:
 
     assert record.ok is False
     assert "unreachable" in (record.error or "")
+
+
+def test_get_tool_client_uses_network_client_for_real_llm_by_default() -> None:
+    settings = Settings(llm_provider=LLMProvider.GOOGLE, google_api_key="x")
+    assert isinstance(get_tool_client(settings), MCPToolClient)
+
+
+def test_get_tool_client_forces_in_process_even_with_real_llm() -> None:
+    # Ayrı bir MCP süreci çalıştırmayan tek-konteynerli bir dağıtım (ör.
+    # Render) için — gerçek LLM + in-process araçlar birlikte kullanılabilmeli.
+    settings = Settings(llm_provider=LLMProvider.GOOGLE, google_api_key="x", force_in_process_tools=True)
+    assert isinstance(get_tool_client(settings), InProcessToolClient)

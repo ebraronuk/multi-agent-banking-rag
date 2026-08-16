@@ -17,6 +17,7 @@ COPY src ./src
 RUN pip install .
 
 COPY data/sample_docs ./data/sample_docs
+COPY scripts ./scripts
 
 # Root olmayan bir runtime kullanıcısı. vectorstore dizini burada oluşturulup
 # chown ediliyor (volume mount'un halletmesine bırakılmıyor) çünkü Docker

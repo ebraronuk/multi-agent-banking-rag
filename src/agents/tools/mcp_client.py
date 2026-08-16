@@ -153,12 +153,11 @@ class InProcessToolClient:
 
 
 def get_tool_client(settings: Settings) -> MCPToolClient | InProcessToolClient:
-    """Fake LLM'de in-process istemci, gerçek LLM'de ağ istemcisi kullanılır.
-
-    Bir gerçek dağıtım, gerçek bir LLM ile de latency kazanmak için in-process
-    yolu tercih edebilir — burada ikisini de göstermek için LLM ayarı anahtarı
-    ikiletiyor.
+    """Fake LLM'de her zaman in-process istemci; gerçek LLM'de de
+    `force_in_process_tools` set edilmişse (ör. ayrı bir MCP süreci
+    çalıştırmayan tek-konteynerli bir dağıtım) yine in-process, aksi halde
+    ağ üzerinden bir MCP sunucusuna gider.
     """
-    if settings.resolved_llm_provider() == LLMProvider.FAKE:
+    if settings.resolved_llm_provider() == LLMProvider.FAKE or settings.force_in_process_tools:
         return InProcessToolClient(get_banking_repository(settings))
     return MCPToolClient(settings.mcp_server_url)

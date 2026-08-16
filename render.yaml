@@ -1,43 +1,48 @@
 services:
   - type: web
-    name: api
+    name: multi-agent-banking-rag-api
     runtime: docker
-    dockerfilePath: docker/Dockerfile
+    dockerfilePath: ./docker/Dockerfile
+    dockerContext: .
     plan: free
     healthCheckPath: /healthz
+    startCommand: >-
+      python scripts/seed_vectorstore.py &&
+      uvicorn app.main:app --host 0.0.0.0 --port 8000 --app-dir src
     envVars:
       - key: LLM_PROVIDER
         value: google
       - key: GOOGLE_API_KEY
         sync: false
       - key: LLM_MODEL
-        value: gemini-2.0-flash
+        value: gemini-flash-latest
       - key: EMBEDDING_PROVIDER
         value: fake
       - key: CHROMA_PERSIST_DIR
         value: /data/vectorstore
-      - key: DATABASE_URL
-        sync: false
-      - key: MCP_SERVER_HOST
+      - key: CHROMA_COLLECTION
+        value: banking_kb
+      # Render'da ayrı bir MCP süreci çalıştırmıyoruz (tek web service) — gerçek
+      # LLM'le de in-process araç istemcisi kullanılsın (bkz. ADR-005 / mcp_client.py).
+      - key: FORCE_IN_PROCESS_TOOLS
+        value: "true"
+      - key: REDIS_URL
         fromService:
-          name: mcp
-          type: pserv
-          property: host
-      - key: MCP_SERVER_PORT
-        value: "8765"
+          type: redis
+          name: multi-agent-banking-rag-redis
+          property: connectionString
+      - key: APP_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+      - key: CHAT_RATE_LIMIT
+        value: 20/minute
+      # Vercel'e frontend deploy edildikten SONRA, o projenin gerçek URL'siyle
+      # Render dashboard'undan elle set edilecek (chicken-and-egg: URL önce bilinmiyor).
       - key: CORS_ALLOWED_ORIGINS
         sync: false
 
-  - type: pserv
-    name: mcp
-    runtime: docker
-    dockerfilePath: docker/Dockerfile
-    dockerCommand: python -m mcp_server.server
+  - type: redis
+    name: multi-agent-banking-rag-redis
     plan: free
-    envVars:
-      - key: DATABASE_URL
-        sync: false
-      - key: MCP_SERVER_HOST
-        value: "0.0.0.0"
-      - key: MCP_SERVER_PORT
-        value: "8765"
+    ipAllowList: []

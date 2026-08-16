@@ -50,6 +50,12 @@ class Settings(BaseSettings):
 
     mcp_server_host: str = "127.0.0.1"
     mcp_server_port: int = 8765
+    force_in_process_tools: bool = Field(
+        default=False,
+        description="True ise gerçek bir LLM sağlayıcısıyla bile in-process araç "
+        "istemcisi kullanılır (ayrı bir MCP sunucu süreci olmayan tek-konteynerli "
+        "dağıtımlar için — bkz. agents/tools/mcp_client.py::get_tool_client).",
+    )
 
     max_agent_iterations: int = Field(default=6, ge=1, le=20)
     request_timeout_seconds: int = Field(default=30, ge=1)
