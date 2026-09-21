@@ -58,6 +58,28 @@ class Settings(BaseSettings):
     )
 
     max_agent_iterations: int = Field(default=6, ge=1, le=20)
+
+    # --- Gözlemlenebilirlik (Langfuse) ---------------------------------------
+    # LLM sistemlerinde asıl zorluk hatayı görmek değil, hangi katmanda
+    # olduğunu görmek. Trace'siz bir ajan grafiğinde "yanlış cevap"ın
+    # retrieval'dan mı, prompt'tan mı, modelden mi geldiği tahmine kalıyor.
+    # Anahtar verilmezse sessizce kapanır — `llm_provider=fake` ile aynı
+    # felsefe: eksik yapılandırma çalışmayı durdurmamalı.
+    langfuse_public_key: str | None = None
+    langfuse_secret_key: str | None = None
+    langfuse_host: str = "https://cloud.langfuse.com"
+    langfuse_enabled: bool = Field(
+        default=True,
+        description="False ise anahtarlar dolu olsa bile tracing kapatılır "
+        "(CI ve offline çalıştırmalar için açık kapı).",
+    )
+    langfuse_sample_rate: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        description="Trace'lenecek isteklerin oranı. Üretimde maliyet ve "
+        "gürültüyü düşürmek için 1.0'ın altına çekilebilir.",
+    )
     request_timeout_seconds: int = Field(default=30, ge=1)
     chat_rate_limit: str = Field(
         default="20/minute", description="slowapi limit string, e.g. '20/minute'"
@@ -92,6 +114,15 @@ class Settings(BaseSettings):
     def mcp_server_url(self) -> str:
         # "/mcp" FastMCP'nin varsayılan streamable-HTTP yolu.
         return f"http://{self.mcp_server_host}:{self.mcp_server_port}/mcp"
+
+    @property
+    def tracing_enabled(self) -> bool:
+        """Tracing yalnızca açıkça açıldıysa VE iki anahtar da varsa aktif.
+
+        Eksik anahtarla çökmek yerine kapanıyor: gözlemlenebilirlik bir
+        teşhis aracı, bir çalışma önkoşulu değil.
+        """
+        return bool(self.langfuse_enabled and self.langfuse_public_key and self.langfuse_secret_key)
 
     def resolved_llm_provider(self) -> LLMProvider:
         """Anahtar yoksa çökmek yerine FAKE'e düşer — CI ve anahtarsız lokal
