@@ -1,0 +1,41 @@
+{
+  "generated_at": 1790017850.5108004,
+  "metrics": {
+    "intent_accuracy": {
+      "name": "intent_accuracy",
+      "accuracy": 1.0,
+      "correct": 8,
+      "total": 8,
+      "latency": {
+        "count": 8,
+        "mean_ms": 0.01,
+        "p50_ms": 0.01,
+        "p95_ms": 0.02,
+        "max_ms": 0.02
+      },
+      "misses": []
+    },
+    "real_utterance_accuracy": {
+      "name": "real_utterance_accuracy",
+      "accuracy": 0.8,
+      "correct": 28,
+      "total": 35,
+      "latency": {
+        "count": 39,
+        "mean_ms": 0.01,
+        "p50_ms": 0.01,
+        "p95_ms": 0.01,
+        "max_ms": 0.03
+      },
+      "misses": [
+        "[yazim_hatasi] 'bakyem ne kdar' beklenen=ACCOUNT_ACTION gelen=OUT_OF_SCOPE  # Mobilde hızlı yazan kullanıcı. Harf düşmesi.",
+        "[eksik_bilgi] 'kredi kartımı iptal etmek istiyorum ama bankamatik kartım kalsın' beklenen=CARD_ACTION gelen=ACCOUNT_ACTION  # Hangi kart? Sistemin sorması gerekiyor, varsaymaması.",
+        "[konusma_dili] 'günlük ne kadar gönderebiliyorum' beklenen=RAG_QUERY gelen=OUT_OF_SCOPE  # 'EFT' veya 'limit' kelimesi geçmiyor.",
+        "[duygusal] 'bu ne biçim uygulama 3 gündür param gelmedi sizi şikayet edeceğim' beklenen=ESCALATE gelen=ACCOUNT_ACTION  # Kızgın, uzun, birden fazla şey söylüyor. Sistem savunmaya geçmemeli, insana devretmeli.",
+        "[cok_niyetli] 'kartımı blokla bi de bakiyem ne kadar' beklenen=CARD_ACTION gelen=ACCOUNT_ACTION  # İki niyet tek mesajda. 'bi de' bağlacı. ADR-012'nin alt-sorgu izolasyonunu test eder.",
+        "[konusma_dili] 'slm' beklenen=SMALL_TALK gelen=OUT_OF_SCOPE  # Kısaltma. Çok yaygın.",
+        "[tuzak] 'dolar yükselecek mi paramı çevireyim mi' beklenen=OUT_OF_SCOPE gelen=ACCOUNT_ACTION  # Yine yatırım tavsiyesi, ama bankacılık kelimeleriyle kamufle. RAG'a kaçmamalı."
+      ]
+    }
+  }
+}

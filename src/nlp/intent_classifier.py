@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from agents.prompts.intent_prompt import INTENT_SYSTEM_PROMPT
 from app.core.llm import is_fake_model
 from app.core.logging import get_logger
-from nlp.text_utils import turkish_lower
+from nlp.text_utils import ascii_fold
 from schemas.dto import Entity, EntityType, IntentLabel
 
 logger = get_logger(__name__)
@@ -45,13 +45,16 @@ _INTENT_KEYWORDS: dict[IntentLabel, tuple[str, ...]] = {
         "fee",
         "what is the",
     ),
+    # Türkçe sondan eklemeli: "hesap" -> "hesabım", "hesabımda", "hesabımdaki".
+    # Çekimli tam biçim listelemek her eki tek tek yazmayı gerektiriyor ve
+    # kaçınılmaz olarak eksik kalıyor; bunun yerine ekin önündeki kök
+    # yazılıyor ve alt-dize eşleşmesi çekimleri kendiliğinden yakalıyor.
     IntentLabel.ACCOUNT_ACTION: (
         "bakiye",
+        "bakiyem",
         "hesap özeti",
-        "hesabım ne kadar",
-        "hesap hareketleri",
+        "hesabım",
         "hesap durum",
-        "hesabımdaki tutar",
         "param",
         "balance",
         "account summary",
@@ -63,7 +66,13 @@ _INTENT_KEYWORDS: dict[IntentLabel, tuple[str, ...]] = {
     IntentLabel.TRANSACTION_ACTION: (
         "işlem geçmişi",
         "son işlem",
-        "harcama",
+        # "harca" kökü: harcama, harcadım, harcamışım, harcamalarım.
+        "harca",
+        # "hesap hareketleri" daha önce ACCOUNT_ACTION'daydı. Türkçe bankacılık
+        # dilinde bu ifade işlem geçmişi demek, hesap özeti değil — gerçek
+        # kullanıcı dili setinde "hesap hareketlerimi görmek istiyorum"
+        # yanlış kovaya düşünce fark edildi.
+        "hesap hareket",
         "transaction history",
     ),
     IntentLabel.CARD_ACTION: (
@@ -79,6 +88,16 @@ _INTENT_KEYWORDS: dict[IntentLabel, tuple[str, ...]] = {
         "kartımı kaybettim",
         "kartım kayboldu",
         "kartımı iptal",
+        # Çıplak "kartım" kökü bilinçli olarak YOK. Denendi ve geri alındı:
+        # "Kartımı ne zaman bloke edebilirim, politikanız nedir?" bir politika
+        # sorusu, kart işlemi değil — eylem niyetleri soru niyetlerinden daha
+        # güçlü kanıt istemeli, yoksa tool_agent alakasız bir "kartının son 4
+        # hanesi?" sorusuyla RAG cevabını kirletiyor (bkz.
+        # test_rule_based_extra_intents_requires_corroboration_for_action_intents).
+        # Arızalı kart ifadeleri ise spesifik, o yüzden güvenle eklenebiliyor.
+        "kart çalışm",
+        "kartım çalışm",
+        "kartim calism",
         "block my card",
         "card stolen",
         "lost my card",
@@ -105,7 +124,15 @@ _INTENT_KEYWORDS: dict[IntentLabel, tuple[str, ...]] = {
         "temsilciyle görüş",
         "temsilciye bağlan",
         "temsilciye aktar",
+        # "temsilci" kökü: temsilcisine, temsilciyle, temsilcinize.
+        "temsilci",
         "müşteri temsilcisi",
+        # Şikayet dili eskalasyon sinyali: kızgın kullanıcıyı otomatik akışta
+        # tutmak, memnuniyetsizliği büyütmekten başka bir şey yapmıyor.
+        "şikayet",
+        "şikayetçi",
+        "dava",
+        "müşteri temsilcisine",
         "müşteri hizmetleri",
         "insana bağla",
         "insanla görüş",
@@ -170,13 +197,29 @@ class _IntentClassification(BaseModel):
     extra_intents: list[IntentLabel] = Field(default_factory=list)
 
 
+# Anahtar kelimeler doğru Türkçe ile yazılıyor; eşleştirme ise ASCII'ye
+# indirgenmiş metin üzerinde yapılıyor. Bu yüzden listeyi bir kez indirgeyip
+# saklıyoruz — her çağrıda yeniden katlamak, sıcak yoldaki tek gereksiz iş
+# olurdu.
+_FOLDED_INTENT_KEYWORDS: dict[IntentLabel, tuple[str, ...]] = {
+    intent: tuple(ascii_fold(keyword) for keyword in keywords)
+    for intent, keywords in _INTENT_KEYWORDS.items()
+}
+
+
 def _score_intents(text: str, entities: list[Entity]) -> dict[IntentLabel, int]:
-    lowered = turkish_lower(text)
+    """Niyet skoru — ASCII'ye indirgenmiş metin üzerinde.
+
+    Türkçe karakter kullanmayan kullanıcı ("musteri", "gormek", "hesabimda")
+    aksi halde hiçbir anahtar kelimeyi tutturamıyor ve OUT_OF_SCOPE'a düşüyor.
+    Gerçek kullanıcı dili setinde bu tek sınıf, hataların yarısından fazlasıydı.
+    """
+    folded = ascii_fold(text)
     entity_types = {entity.type for entity in entities}
 
     scores: dict[IntentLabel, int] = {
-        intent: sum(1 for keyword in keywords if keyword in lowered)
-        for intent, keywords in _INTENT_KEYWORDS.items()
+        intent: sum(1 for keyword in keywords if keyword in folded)
+        for intent, keywords in _FOLDED_INTENT_KEYWORDS.items()
     }
     for intent, boost_types in _ENTITY_BOOSTS.items():
         if any(entity_type in entity_types for entity_type in boost_types):
@@ -205,9 +248,10 @@ _EXTRA_INTENT_MIN_SCORE = 1
 _EXTRA_INTENT_CORROBORATION_REQUIRED = frozenset(_ENTITY_BOOSTS.keys())
 
 
-def _has_strong_extra_intent_signal(intent: IntentLabel, lowered_text: str) -> bool:
+def _has_strong_extra_intent_signal(intent: IntentLabel, folded_text: str) -> bool:
     return any(
-        " " in keyword and keyword in lowered_text for keyword in _INTENT_KEYWORDS.get(intent, ())
+        " " in keyword and keyword in folded_text
+        for keyword in _FOLDED_INTENT_KEYWORDS.get(intent, ())
     )
 
 
@@ -219,14 +263,14 @@ def _rule_based_extra_intents(
     set/dedup/2-sınır filtresini gerçek LLM yolundakiyle aynı şekilde uyguluyor.
     """
     scores = _score_intents(text, entities)
-    lowered = turkish_lower(text)
+    folded = ascii_fold(text)
 
     candidates = []
     for intent, score in scores.items():
         if intent == primary or score < _EXTRA_INTENT_MIN_SCORE:
             continue
         if intent in _EXTRA_INTENT_CORROBORATION_REQUIRED and not _has_strong_extra_intent_signal(
-            intent, lowered
+            intent, folded
         ):
             continue
         candidates.append(intent)
