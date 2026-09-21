@@ -17,8 +17,8 @@ from agents.graph import build_graph
 from app.api.routes import chat, health
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
-from app.core.tracing import flush_traces, tracing_status
 from app.core.rate_limit import limiter
+from app.core.tracing import flush_traces, tracing_status
 from schemas.dto import ErrorCode, ErrorResponse
 
 logger = get_logger(__name__)

@@ -33,6 +33,7 @@ from evaluation.eval_harness import (
 from nlp.intent_classifier import classify_intent_rule_based
 from nlp.ner_extractor import extract_entities
 from rag.retriever import HybridRetriever
+from schemas.dto import IntentLabel
 
 T = TypeVar("T")
 
@@ -44,6 +45,11 @@ DEFAULT_BASELINE_PATH = Path("data/eval_baseline.json")
 ACCURACY_TOLERANCE = 0.05
 # Gecikme bu oranın üstünde artarsa regresyon. 1.5 = %50 yavaşlama.
 LATENCY_TOLERANCE_FACTOR = 1.5
+# ...ama yalnızca temel bu eşiğin üstündeyse. Çarpımsal tolerans küçük
+# sayılarda anlamsız: 0.01ms -> 0.02ms teknik olarak 2x, pratikte ölçüm
+# gürültüsü. İlk gerçek koşuda kapı tam olarak bu yüzden yanlış alarm verdi;
+# kendi ADR'imde "yanlış alarm veren kapı, olmayan kapıdır" yazarken.
+LATENCY_FLOOR_MS = 5.0
 
 
 @dataclass(frozen=True)
@@ -115,11 +121,27 @@ class EvalReport:
         return "\n".join(lines)
 
 
-def _timed(fn: Callable[[], T]) -> tuple[T, float]:
-    """Çağrıyı çalıştırır, milisaniye cinsinden süresiyle birlikte döner."""
+def _timed(fn: Callable[..., T], *args: Any) -> tuple[T, float]:
+    """Çağrıyı çalıştırır, milisaniye cinsinden süresiyle birlikte döner.
+
+    Lambda yerine fonksiyon+argüman alıyor: döngü içinde `lambda: f(case)`
+    yazmak, `case`i referansla yakalayıp ruff B023'ü tetikliyor ve mypy'ın
+    tipi çıkaramamasına yol açıyor. Burada anında çağrıldığı için pratikte
+    güvenliydi ama iki aracı da susturmak için susturma yorumu yazmaktansa
+    imzayı düzeltmek doğrusu.
+    """
     start = time.perf_counter()
-    value = fn()
+    value = fn(*args)
     return value, (time.perf_counter() - start) * 1000.0
+
+
+def classify_with_entities(text: str) -> tuple[IntentLabel, float]:
+    """Varlık çıkarımı + niyet sınıflandırma, tek çağrıda.
+
+    İkisi birlikte ölçülüyor çünkü üretimde de birlikte çalışıyorlar; ayrı
+    ölçmek, gerçekte katlanılan gecikmeyi olduğundan küçük gösterirdi.
+    """
+    return classify_intent_rule_based(text, extract_entities(text))
 
 
 def measure_intent(cases: tuple[IntentEvalCase, ...] = INTENT_EVAL_SET) -> MetricResult:
@@ -133,9 +155,7 @@ def measure_intent(cases: tuple[IntentEvalCase, ...] = INTENT_EVAL_SET) -> Metri
     misses: list[str] = []
     samples: list[float] = []
     for case in cases:
-        (predicted, _confidence), elapsed = _timed(
-            lambda c=case: classify_intent_rule_based(c.text, extract_entities(c.text))
-        )
+        (predicted, _confidence), elapsed = _timed(classify_with_entities, case.text)
         samples.append(elapsed)
         if predicted == case.expected:
             correct += 1
@@ -164,7 +184,7 @@ def measure_retrieval(
     misses: list[str] = []
     samples: list[float] = []
     for case in cases:
-        citations, elapsed = _timed(lambda c=case: retriever.retrieve(c.query))
+        citations, elapsed = _timed(retriever.retrieve, case.query)
         samples.append(elapsed)
         top_source = citations[0].source if citations else ""
         if case.expected_source in top_source:
@@ -221,7 +241,7 @@ def compare_to_baseline(report: EvalReport, baseline_path: Path = DEFAULT_BASELI
         if metric.accuracy < prior_accuracy - ACCURACY_TOLERANCE:
             regressions.append(Regression(metric.name, "accuracy", prior_accuracy, metric.accuracy))
         prior_p95 = float(prior.get("latency", {}).get("p95_ms", 0.0))
-        if prior_p95 > 0 and metric.latency.p95_ms > prior_p95 * LATENCY_TOLERANCE_FACTOR:
+        if prior_p95 >= LATENCY_FLOOR_MS and metric.latency.p95_ms > prior_p95 * LATENCY_TOLERANCE_FACTOR:
             regressions.append(Regression(metric.name, "p95_ms", prior_p95, metric.latency.p95_ms))
     return regressions
 
@@ -238,7 +258,7 @@ def push_to_langfuse(report: EvalReport, run_name: str | None = None) -> bool:
     if not settings.tracing_enabled:
         return False
     try:
-        from langfuse import Langfuse  # type: ignore[import-not-found]
+        from langfuse import Langfuse
 
         client = Langfuse(
             public_key=settings.langfuse_public_key,

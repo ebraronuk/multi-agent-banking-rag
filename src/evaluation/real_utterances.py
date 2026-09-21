@@ -21,9 +21,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
-from evaluation.report import LatencyStats, MetricResult, _timed
-from nlp.intent_classifier import classify_intent_rule_based
-from nlp.ner_extractor import extract_entities
+from evaluation.report import LatencyStats, MetricResult, _timed, classify_with_entities
 from schemas.dto import IntentLabel
 
 DEFAULT_CORPUS_PATH = Path("data/eval/real_user_utterances.json")
@@ -125,9 +123,7 @@ def run_real_utterance_eval(cases: tuple[Utterance, ...] | None = None) -> RealU
 
     for case in corpus:
         try:
-            (predicted, _confidence), elapsed = _timed(
-                lambda c=case: classify_intent_rule_based(c.text, extract_entities(c.text))
-            )
+            (predicted, _confidence), elapsed = _timed(classify_with_entities, case.text)
             samples.append(elapsed)
         except Exception as exc:
             crashes.append(f"{case.text!r} -> {type(exc).__name__}: {exc}")

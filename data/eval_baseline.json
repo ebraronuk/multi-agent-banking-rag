@@ -1,5 +1,5 @@
 {
-  "generated_at": 1790017850.5108004,
+  "generated_at": 1790018696.9641383,
   "metrics": {
     "intent_accuracy": {
       "name": "intent_accuracy",
@@ -25,7 +25,7 @@
         "mean_ms": 0.01,
         "p50_ms": 0.01,
         "p95_ms": 0.01,
-        "max_ms": 0.03
+        "max_ms": 0.02
       },
       "misses": [
         "[yazim_hatasi] 'bakyem ne kdar' beklenen=ACCOUNT_ACTION gelen=OUT_OF_SCOPE  # Mobilde hızlı yazan kullanıcı. Harf düşmesi.",

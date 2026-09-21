@@ -50,7 +50,7 @@ class _HandlerFactory:
 
     def _resolve(self) -> None:
         try:  # Langfuse v3
-            from langfuse.langchain import CallbackHandler  # type: ignore[import-not-found]
+            from langfuse.langchain import CallbackHandler
 
             self._handler_cls = CallbackHandler
             self.version = "v3"
@@ -60,7 +60,7 @@ class _HandlerFactory:
             pass
 
         try:  # Langfuse v2
-            from langfuse.callback import CallbackHandler  # type: ignore[import-not-found]
+            from langfuse.callback import CallbackHandler
 
             self._handler_cls = CallbackHandler
             self.version = "v2"
@@ -81,7 +81,7 @@ class _HandlerFactory:
             if self.version == "v3":
                 # v3'te istemci ortam/konstruktör üzerinden ayrı kuruluyor;
                 # handler parametresiz alınıyor.
-                from langfuse import Langfuse  # type: ignore[import-not-found]
+                from langfuse import Langfuse
 
                 Langfuse(
                     public_key=settings.langfuse_public_key,
@@ -178,12 +178,12 @@ def flush_traces() -> None:
     if not _factory().available:
         return
     try:
-        from langfuse import get_client  # type: ignore[import-not-found]
+        from langfuse import get_client
 
         get_client().flush()
     except Exception:  # pragma: no cover
         try:
-            from langfuse import Langfuse  # type: ignore[import-not-found]
+            from langfuse import Langfuse
 
             Langfuse().flush()
         except Exception:
