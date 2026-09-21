@@ -31,7 +31,16 @@ seed-db:
 	python scripts/seed_postgres.py
 
 eval:
-	PYTHONPATH=src python -m evaluation.eval_harness
+	PYTHONPATH=src python -m evaluation
+
+eval-fast:
+	PYTHONPATH=src python -m evaluation --no-retrieval
+
+eval-save:
+	PYTHONPATH=src python -m evaluation --save
+
+eval-gate:
+	PYTHONPATH=src python -m evaluation --gate
 
 run:
 	python -m app.main --app-dir src
