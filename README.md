@@ -38,6 +38,19 @@ canlı doğrulanmış, gerçek bug'lar — gömülü değil, burada:
 - **Paraphrase recall'ı %46'dan %90'a**: rule-based niyet sınıflandırıcı, aynı isteğin
   10 farklı doğal ifadesinden sadece ~5'ini doğru sınıflandırıyordu (ESCALATE'te 10'da
   1'e kadar düşüyordu) — anahtar kelime kapsamı genişletilip ölçüldü.
+- **Kendi eval setim yalan söylüyordu**: ilk set tam cümlelerden oluşuyordu ("Bakiyem ne
+  kadar acaba?") ve sistem orada **%100** alıyordu. Kimse bir chatbot'a öyle yazmıyor.
+  Gerçek kullanıcı dilinden 35 vakalık bir set kurdum — küçük harf, noktalama yok, Türkçe
+  karakter yok, yazım hatası, tek kelimelik istek, kızgın kullanıcı. Aynı sistem orada
+  **%57.1** aldı. İki kök sebep çıktı: (1) Türkçe karakter kullanmayan kullanıcı
+  ("musteri", "hesabimda") hiçbir anahtar kelimeyi tutturamıyordu — `ascii_fold()`
+  eklendi, bu sınıf **%22 → %100**; (2) anahtar kelimeler çekimli tam biçimlerdi, oysa
+  Türkçe sondan eklemeli — kök tabanlı hale getirildi. Genel skor **%57.1 → %80.0**.
+  Bir de `hesap hareketleri` yanlış kovadaydı (hesap özeti değil, işlem geçmişi).
+- **Bir iyileştirmeyi geri aldım**: çıplak `kartım` kökü skoru %85.7'ye çıkarıyordu ama
+  "Kartımı ne zaman bloke edebilirim, politikanız nedir?" politika sorusunu kart işlemi
+  sanmaya başladı ve mevcut bir regresyon testini kırdı. O test gerçek bir bug'ı
+  koruyordu. 28 puan yerine 23 puanı aldım; gerekçe koda yazılı.
 
 Ayrıca `/chat`'in dayanıklılık iddiaları (ADR-007) uçtan uca test edildi: bir bağımlılık
 (Postgres, LLM sağlayıcısı) konuşma ortasında patlarsa sistem hâlâ 200 dönüyor mu,
