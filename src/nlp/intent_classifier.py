@@ -155,6 +155,14 @@ _INTENT_KEYWORDS: dict[IntentLabel, tuple[str, ...]] = {
         "real person",
         "hesap açtır",
         "hesap açmak istiyorum",
+        # Asistan kart bloke ettikten sonra "yeni kart talebinizi uygulama
+        # üzerinden oluşturabilirsiniz" diyordu; kullanıcı "yeni kart talebi"
+        # yazınca KAPSAM DIŞI cevabı alıyordu. Bir asistanın kendi önerdiği
+        # şeyi reddetmesi, hiç önermemesinden kötü.
+        "yeni kart",
+        "kart talebi",
+        "kart başvuru",
+        "kart siparişi",
         "kredi başvurusu",
         "kredi çekmek istiyorum",
         "para transfer",

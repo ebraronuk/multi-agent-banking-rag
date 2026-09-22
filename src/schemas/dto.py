@@ -109,6 +109,11 @@ class PendingEntityRequest(BaseModel):
     intent: IntentLabel
     entity_type: EntityType
     original_message: str
+    # Asistan bir değer ÖNERDİYSE ("7788 ile biten kartınız için onaylıyor
+    # musunuz?") burada duruyor. Kullanıcının "onaylıyorum" demesi, rakamı
+    # tekrar yazmasıyla aynı şey olmalı — aksi halde sistem kendi sorduğu
+    # evet/hayır sorusunun cevabını anlamıyor.
+    proposed_value: str | None = None
 
 
 class ChatRequest(BaseModel):

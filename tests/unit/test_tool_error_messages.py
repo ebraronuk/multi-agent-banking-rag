@@ -53,30 +53,35 @@ class TestHumanizeToolError:
 class TestBuildCardPrompt:
     def test_tek_kartta_secim_sorulmuyor(self) -> None:
         """Bildiğimiz bir şeyi sormak, kendi verimizi görmezden gelmek demek."""
-        prompt = build_card_prompt([{"last4": "4321", "status": "active"}])
+        prompt, proposed = build_card_prompt([{"last4": "4321", "status": "active"}])
         assert "4321" in prompt
         assert "Hangisini" not in prompt
+        # Evet/hayır sorusu soruluyorsa, "onaylıyorum" cevabı da anlaşılmalı.
+        assert proposed == "4321"
 
     def test_coklu_kartta_hepsi_listeleniyor(self) -> None:
-        prompt = build_card_prompt(
+        prompt, proposed = build_card_prompt(
             [{"last4": "4321", "status": "active"}, {"last4": "9087", "status": "active"}]
         )
         assert "4321" in prompt and "9087" in prompt
         assert "Hangisini" in prompt
+        # Birden fazla kart varsa öneri olmamalı — hangisi olduğu belirsiz.
+        assert proposed is None
 
     def test_bloke_kartlar_secenek_olarak_sunulmuyor(self) -> None:
-        prompt = build_card_prompt(
+        prompt, _ = build_card_prompt(
             [{"last4": "4321", "status": "active"}, {"last4": "1122", "status": "blocked"}]
         )
         assert "4321" in prompt
         assert "1122" not in prompt
 
     def test_aktif_kart_yoksa_insana_yonlendiriyor(self) -> None:
-        prompt = build_card_prompt([{"last4": "1122", "status": "blocked"}])
+        prompt, proposed = build_card_prompt([{"last4": "1122", "status": "blocked"}])
         assert "temsilci" in prompt.lower()
+        assert proposed is None
 
     def test_hic_kart_yoksa_patlamiyor(self) -> None:
-        assert build_card_prompt([]).strip()
+        assert build_card_prompt([])[0].strip()
 
     def test_son_4_hane_sorusu_artik_sorulmuyor(self) -> None:
         """Bu, değişikliğin asıl amacı: kimlik kanıtı değil netleştirme.
@@ -85,7 +90,7 @@ class TestBuildCardPrompt:
         karşıdakinin kim olduğu bilinmediğinde mantıklı. Uygulama içi bir
         asistanda kullanıcı zaten giriş yapmış durumda.
         """
-        prompt = build_card_prompt(
+        prompt, _ = build_card_prompt(
             [{"last4": "4321", "status": "active"}, {"last4": "9087", "status": "active"}]
         )
         assert "son 4" not in prompt.lower()
