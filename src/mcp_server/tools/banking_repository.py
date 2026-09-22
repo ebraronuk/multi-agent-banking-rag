@@ -64,6 +64,8 @@ class BankingRepository(Protocol):
 
     async def list_transactions(self, account_id: str, limit: int = 10) -> dict[str, object]: ...
 
+    async def list_cards(self, account_id: str) -> dict[str, object]: ...
+
     async def block_card(self, card_last4: str, reason: str) -> dict[str, object]: ...
 
     async def open_support_ticket(self, subject: str, description: str) -> dict[str, object]: ...
@@ -113,6 +115,23 @@ class InMemoryBankingRepository:
 
         transactions = account["transactions"][:limit]  # type: ignore[index]
         return {"ok": True, "data": {"account_id": account_id, "transactions": transactions}}
+
+    async def list_cards(self, account_id: str) -> dict[str, object]:
+        """Müşterinin kartları. Asistan "hangi kart?" diye sorarken bunu
+        listeliyor — kullanıcıdan kimlik kanıtı istemek yerine seçenek
+        sunmak için (bkz. app/core/session.py)."""
+        account = self._accounts.get(account_id)
+        if account is None:
+            logger.info("repo_lookup_miss", repo="in_memory", tool="list_cards", account_id=account_id)
+            return {"ok": False, "error": "ACCOUNT_NOT_FOUND"}
+        cards = cast("list[dict[str, object]]", account["cards"])
+        return {
+            "ok": True,
+            "data": {
+                "account_id": account_id,
+                "cards": [{"last4": c["last4"], "status": c["status"]} for c in cards],
+            },
+        }
 
     async def block_card(self, card_last4: str, reason: str) -> dict[str, object]:
         found = _find_card(self._accounts, card_last4)
@@ -217,6 +236,24 @@ class PostgresBankingRepository:
             for row in rows
         ]
         return {"ok": True, "data": {"account_id": account_id, "transactions": transactions}}
+
+    async def list_cards(self, account_id: str) -> dict[str, object]:
+        try:
+            pool = await self._get_pool()
+            rows = await pool.fetch(  # type: ignore[attr-defined]
+                "SELECT card_last4, status FROM cards WHERE account_id = $1 ORDER BY card_last4",
+                account_id,
+            )
+        except Exception:
+            logger.warning("repo_list_cards_failed", repo="postgres", exc_info=True)
+            return {"ok": False, "error": "BANKING_SERVICE_UNAVAILABLE"}
+        return {
+            "ok": True,
+            "data": {
+                "account_id": account_id,
+                "cards": [{"last4": r["card_last4"], "status": r["status"]} for r in rows],
+            },
+        }
 
     async def block_card(self, card_last4: str, reason: str) -> dict[str, object]:
         try:

@@ -38,8 +38,12 @@ INSERT INTO accounts (account_id, owner_name, balance, currency) VALUES
     ('TR640001000000012345678901', 'Mehmet Demir (demo)', 3120.40, 'TRY')
 ON CONFLICT (account_id) DO NOTHING;
 
+-- Demo müşterisinin (TR3300...) İKİ aktif kartı var. Tek kart olsaydı
+-- asistanın "hangisini bloke edeyim?" sorusu hiç görünmezdi; iki kart,
+-- netleştirme akışını demoda gerçekten görülebilir kılıyor.
 INSERT INTO cards (card_last4, account_id, status) VALUES
     ('4321', 'TR330006100519786457841326', 'active'),
+    ('7788', 'TR330006100519786457841326', 'active'),
     ('9087', 'TR640001000000012345678901', 'active'),
     ('1122', 'TR640001000000012345678901', 'blocked')
 ON CONFLICT (card_last4) DO NOTHING;
