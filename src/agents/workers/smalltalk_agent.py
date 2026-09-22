@@ -18,6 +18,20 @@ from agents.state import GraphState
 from app.core.llm import is_fake_model, safe_ainvoke
 from schemas.dto import AgentTraceStep
 
+_CANCELLED_MESSAGE = (
+    "Tamam, o işlemi iptal ettim. Başka bir konuda yardımcı olabilir miyim?"
+)
+# Teşekküre karşılama mesajıyla cevap vermek robotik duruyordu: kullanıcı
+# zaten tanışmış, kendini tekrar tanıtan bir asistan konuşmayı başa sarıyor.
+_THANKS_MESSAGE = "Rica ederim. Başka bir konuda yardımcı olabilir miyim?"
+_THANKS_MARKERS = ("teşekkür", "tesekkur", "sağol", "sagol", "eyvallah", "thanks", "mersi")
+
+
+def _is_thanks(text: str) -> bool:
+    lowered = text.strip().lower().replace("İ", "i")
+    return len(lowered) <= 30 and any(marker in lowered for marker in _THANKS_MARKERS)
+
+
 _FALLBACK_GREETING = (
     "Merhaba, ben DemoBank asistanıyım. Bakiye, işlem geçmişi, kart işlemleri "
     "ve banka hizmetleriyle ilgili sorularınızda yardımcı olabilirim."
@@ -28,7 +42,11 @@ def build_smalltalk_node(
     llm: BaseChatModel,
 ) -> Callable[[GraphState], Awaitable[dict[str, object]]]:
     async def smalltalk_node(state: GraphState) -> dict[str, object]:
-        if is_fake_model(llm):
+        if state.get("cancelled_pending"):
+            draft_answer = _CANCELLED_MESSAGE
+        elif _is_thanks(state["user_query"]):
+            draft_answer = _THANKS_MESSAGE
+        elif is_fake_model(llm):
             draft_answer = _FALLBACK_GREETING
         else:
             draft_answer = await safe_ainvoke(

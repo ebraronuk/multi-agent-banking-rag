@@ -235,7 +235,38 @@ def _score_intents(text: str, entities: list[Entity]) -> dict[IntentLabel, int]:
     return scores
 
 
+# Güçlü şikayet ifadeleri. Bunlar varsa niyet skorlarına bakılmıyor:
+# "3 gündür param gelmedi rezalet" mesajı "param" kelimesi yüzünden
+# ACCOUNT_ACTION'a düşüyor ve kızgın kullanıcıya bakiyesi okunuyordu.
+# Gereksiz yere insana aktarmak, şikayete bakiye okumaktan iyidir.
+_COMPLAINT_MARKERS: tuple[str, ...] = (
+    "rezalet",
+    "berbat",
+    "şikayet",
+    "sikayet",
+    "rezillik",
+    "skandal",
+    "kabul edilemez",
+    "ne biçim",
+    "ne bicim",
+    "yeter artık",
+    "bıktım",
+    "biktim",
+    "dava ed",
+    "gelmedi hala",
+    "hala gelmedi",
+)
+
+
+def has_complaint_tone(text: str) -> bool:
+    folded = ascii_fold(text)
+    return any(ascii_fold(marker) in folded for marker in _COMPLAINT_MARKERS)
+
+
 def classify_intent_rule_based(text: str, entities: list[Entity]) -> tuple[IntentLabel, float]:
+    if has_complaint_tone(text):
+        # Yüksek güven: bu bir ton tespiti, kelime eşleşmesi değil.
+        return IntentLabel.ESCALATE, 0.9
     scores = _score_intents(text, entities)
     best_intent = max(scores, key=lambda intent: scores[intent])
     best_score = scores[best_intent]

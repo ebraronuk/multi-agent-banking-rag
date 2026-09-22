@@ -161,3 +161,52 @@ async def test_asistan_kendi_onerdigi_seyi_reddetmiyor(client: AsyncClient) -> N
     body = await _chat(client, "yeni kart talebi")
     _assert_human_readable(str(body["answer"]), "yeni kart talebi")
     assert body["intent"] != "OUT_OF_SCOPE", f"kapsam dışına düştü: {body['answer'][:120]!r}"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cancellation", ["hayır", "boşver", "vazgeçtim", "iptal"])
+async def test_kullanici_baslattigi_akistan_cikabiliyor(
+    client: AsyncClient, cancellation: str
+) -> None:
+    """Sistem "evet"i anlayıp "hayır"ı anlamazsa kullanıcı akışta kilitli kalır.
+
+    Canlıda böyleydi: kart sorusuna "hayır" diyen kullanıcı
+    "Bu bir kart numarası gibi görünmüyor" cevabını alıyor, her mesajında
+    aynı soruya geri dönüyordu.
+    """
+    first = await _chat(client, "kartimi kaybettim napcam")
+    second = await _chat(client, cancellation, conversation_id=str(first["conversation_id"]))
+    answer = str(second["answer"])
+    _assert_human_readable(answer, f"iptal={cancellation!r}")
+    assert "kart numarası" not in answer, "iptal cevabı kart numarası sanıldı"
+    assert not second["tool_calls"], "iptal edilmiş istek yine de çalıştırıldı"
+
+    # İptalden sonra konuşma normale dönmeli, akışta takılı kalmamalı.
+    third = await _chat(client, "bakiyem ne kadar", conversation_id=str(first["conversation_id"]))
+    assert third["intent"] == "ACCOUNT_ACTION", "iptalden sonra akış temizlenmemiş"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "message",
+    ["3 gündür param gelmedi rezalet", "bu ne biçim uygulama", "sizi şikayet edeceğim"],
+)
+async def test_sikayet_tonuna_bakiye_okunmuyor(client: AsyncClient, message: str) -> None:
+    """"3 gündür param gelmedi rezalet" mesajına bakiye okumak, şikayeti duymamak.
+
+    Mesajda "param" geçtiği için ACCOUNT_ACTION'a düşüyordu. Gereksiz yere
+    insana aktarmak, kızgın kullanıcıya bakiyesini okumaktan iyidir.
+    """
+    body = await _chat(client, message)
+    assert body["intent"] == "ESCALATE", f"şikayet {body['intent']} olarak sınıflandı"
+    _assert_human_readable(str(body["answer"]), f"şikayet={message!r}")
+
+
+@pytest.mark.asyncio
+async def test_tesekkure_kendini_yeniden_tanitmiyor(client: AsyncClient) -> None:
+    """Teşekküre karşılama mesajı dönmek konuşmayı başa sarıyordu."""
+    first = await _chat(client, "bakiye")
+    second = await _chat(client, "teşekkürler", conversation_id=str(first["conversation_id"]))
+    answer = str(second["answer"])
+    _assert_human_readable(answer, "teşekkür")
+    assert "ben DemoBank asistanıyım" not in answer, "kullanıcı zaten tanışmıştı"
