@@ -126,3 +126,38 @@ async def test_ham_veri_trace_ve_tool_calls_icinde_kaliyor(client: AsyncClient) 
     assert body["trace"], "trace boş"
     tool_names = [call["tool_name"] for call in body["tool_calls"]]
     assert "block_card" in tool_names, "araç kaydı kaybolmuş"
+
+
+@pytest.mark.asyncio
+async def test_asistanin_sordugu_onay_sorusu_anlasiliyor(client: AsyncClient) -> None:
+    """Asistan "onaylıyor musunuz?" diye soruyorsa, "onaylıyorum" cevabını anlamalı.
+
+    Canlıda şu oluyordu: tek kart kaldığında asistan "7788 ile biten kartınız
+    için onaylıyor musunuz?" diye soruyor, kullanıcı "onaylıyorum" yazıyor ve
+    "Bu bir kart numarası gibi görünmüyor, son 4 haneyi rakamla yazar mısınız?"
+    cevabını alıyordu. Kendi sorduğu evet/hayır sorusunun cevabını anlamayan
+    bir asistan, o soruyu hiç sormamalı.
+    """
+    first = await _chat(client, "kartimi kaybettim napcam")
+    answer = str(first["answer"])
+    if "onaylıyor musunuz" not in answer:
+        pytest.skip("bu fixture'da birden fazla aktif kart var, onay yolu tetiklenmiyor")
+
+    second = await _chat(client, "onaylıyorum", conversation_id=str(first["conversation_id"]))
+    _assert_human_readable(str(second["answer"]), "onay cevabı")
+    assert "rakamla" not in str(second["answer"]), "onay cevabı reddedildi"
+    assert any(c["tool_name"] == "block_card" for c in second["tool_calls"]), "işlem yapılmadı"
+
+
+@pytest.mark.asyncio
+async def test_asistan_kendi_onerdigi_seyi_reddetmiyor(client: AsyncClient) -> None:
+    """Kart bloke edildikten sonra asistan "yeni kart talebinizi uygulama
+    üzerinden oluşturabilirsiniz" diyor. Kullanıcı "yeni kart talebi" yazınca
+    "bu konuda yardımcı olamıyorum" cevabı alıyordu.
+
+    Bir asistanın kendi önerdiği şeyi reddetmesi, hiç önermemesinden kötü.
+    Bot bunu yapamıyor ama bir insan yapabilir — doğru yol eskalasyon.
+    """
+    body = await _chat(client, "yeni kart talebi")
+    _assert_human_readable(str(body["answer"]), "yeni kart talebi")
+    assert body["intent"] != "OUT_OF_SCOPE", f"kapsam dışına düştü: {body['answer'][:120]!r}"

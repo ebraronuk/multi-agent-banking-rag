@@ -69,19 +69,25 @@ _GENERIC_TOOL_ERROR = (
 )
 
 
-def build_card_prompt(cards: list[dict[str, object]]) -> str:
+def build_card_prompt(cards: list[dict[str, object]]) -> tuple[str, str | None]:
     """Kart sorusunu kimlik kanıtından netleştirmeye çeviren metin.
 
-    Tek kart varsa soru bile sorulmuyor — kullanıcıya zaten bildiğimiz bir
-    şeyi sormak, sistemin kendi verisini görmezden gelmesi demek.
+    `(mesaj, önerilen_kart)` döner. Tek kart varsa soru bir evet/hayır
+    sorusuna dönüşüyor ve önerilen kart geri veriliyor — kullanıcının
+    "onaylıyorum" demesi, rakamı yazmasıyla aynı şey olmalı. Bu ikinci değer
+    olmadan sistem, kendi sorduğu evet/hayır sorusunun cevabını anlamıyordu.
     """
     usable = [c for c in cards if c.get("status") != "blocked"]
     if not usable:
-        return "Kayıtlı aktif kartınız görünmüyor. Sizi bir müşteri temsilcisine aktarabilirim."
+        return (
+            "Kayıtlı aktif kartınız görünmüyor. Sizi bir müşteri temsilcisine aktarabilirim.",
+            None,
+        )
     if len(usable) == 1:
-        return f"{usable[0]['last4']} ile biten kartınız için onaylıyor musunuz?"
+        last4 = str(usable[0]["last4"])
+        return f"{last4} ile biten kartınız için onaylıyor musunuz?", last4
     listed = ", ".join(f"{c['last4']} ile biten" for c in usable)
-    return f"{listed} kartlarınız var. Hangisini işleme alayım?"
+    return f"{listed} kartlarınız var. Hangisini işleme alayım?", None
 
 
 def humanize_tool_error(code: str, *, cards: str = "", account: str = "") -> str:
@@ -134,7 +140,7 @@ async def _fetch_cards(
 
 async def _card_choice_prompt(
     tool_client: MCPToolClient | InProcessToolClient,
-) -> str | None:
+) -> tuple[str, str | None] | None:
     """Oturumdaki müşterinin kartlarını çekip netleştirme sorusunu kurar.
 
     `None` dönerse çağıran taraf eski "son 4 hane" metnine düşüyor —
@@ -271,13 +277,19 @@ async def _deterministic_tool_call(
 
     if entity is None:
         prompt_message = missing_message
+        proposed: str | None = None
         if entity_type is EntityType.CARD_LAST4:
-            prompt_message = await _card_choice_prompt(tool_client) or missing_message
+            choice = await _card_choice_prompt(tool_client)
+            if choice is not None:
+                prompt_message, proposed = choice
         return {
             "draft_answer": prompt_message,
             "tool_agent_done": True,
             "pending_entity_request": PendingEntityRequest(
-                intent=intent, entity_type=entity_type, original_message=state["user_query"]
+                intent=intent,
+                entity_type=entity_type,
+                original_message=state["user_query"],
+                proposed_value=proposed,
             ),
             "trace": [
                 AgentTraceStep(

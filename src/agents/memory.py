@@ -12,6 +12,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
 from app.core.config import Settings
 from app.core.logging import get_logger
+from nlp.text_utils import turkish_lower
 from schemas.dto import ChatMessage, EntityType, IntentLabel, PendingEntityRequest
 
 logger = get_logger(__name__)
@@ -163,6 +164,32 @@ def history_to_messages(history: list[ChatMessage]) -> list[BaseMessage]:
     ]
 
 
+_AFFIRMATIVE_ANSWERS = frozenset(
+    {
+        "evet",
+        "evet lütfen",
+        "onaylıyorum",
+        "onayliyorum",
+        "onaylarım",
+        "tamam",
+        "tamamdır",
+        "olur",
+        "peki",
+        "doğru",
+        "dogru",
+        "devam",
+        "yap",
+        "yapalım",
+        "he",
+        "hı hı",
+        "ok",
+        "okey",
+        "evet onayliyorum",
+        "evet onaylıyorum",
+    }
+)
+
+
 def synthesize_bare_answer_entity(
     text: str, pending: PendingEntityRequest
 ) -> tuple[IntentLabel, EntityType, str] | None:
@@ -171,6 +198,15 @@ def synthesize_bare_answer_entity(
     eşleşme yanlış bir bankacılık işlemini sessizce tetikleyebilir.
     """
     stripped = text.strip()
+
+    # Asistan bir değer önerdiyse, onay cevabı rakamı yazmakla aynı şey.
+    # Liste bilinçli olarak dar ve mesaj kısa olmak zorunda: geniş bir
+    # eşleşme, kullanıcının yeni bir isteğini sessizce "evet" sayıp yanlış
+    # bir bankacılık işlemi tetikleyebilir.
+    if pending.proposed_value and len(stripped) <= 25:
+        normalized = turkish_lower(stripped).strip(" .,!?")
+        if normalized in _AFFIRMATIVE_ANSWERS:
+            return pending.intent, pending.entity_type, pending.proposed_value
 
     if pending.entity_type == EntityType.CARD_LAST4 and stripped.isdigit() and len(stripped) == 4:
         return pending.intent, EntityType.CARD_LAST4, stripped
