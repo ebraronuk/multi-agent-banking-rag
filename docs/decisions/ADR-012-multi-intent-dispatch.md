@@ -1,123 +1,73 @@
 # ADR-012: Tek mesajda birden fazla niyeti işleme (çoklu-niyet dispatch)
 
 ## Bağlam
+`intent_agent` bir mesaja tek `IntentLabel` atıyor, `supervisor` tek worker'a yönlendiriyor.
+"Kartımı blokla ve EFT limitiniz ne kadar?" gibi iki kategoriye giren bir istekte sistem
+birini seçip diğerini hiç işlemiyor; kullanıcı ikinci kez yazmak zorunda kalıyor.
 
-`intent_agent`, bir mesaja her zaman tek bir `IntentLabel` atıyor; `supervisor` da bu tek
-etikete göre tek bir worker'a yönlendiriyor. "Kartımı blokla ve EFT limitiniz ne kadar?"
-gibi tek mesajda iki farklı kategoriye (CARD_ACTION + RAG_QUERY) giren bir istekte, sistem
-sadece birini seçip diğerini hiç işlemiyor — kullanıcı cevabını göremeyen isteği ikinci bir
-mesajla tekrar yazmak zorunda kalıyor.
+`tool_agent` zaten aynı kategori içinde birden fazla aracı bir turda çağırabiliyor
+(ADR-009) — ama supervisor'ın seçtiği tek kategorinin içinde. RAG_QUERY ile CARD_ACTION
+arasında köprü yok.
 
-Bu, tek etiketli niyet sınıflandırmasının bilinen bir sınırı: gerçek kullanıcı mesajları
-genelde tek bir niyet taşır, ama bileşik istekler (özellikle sesli/serbest metin arayüzlerde)
-az değil. `tool_agent`'ın kendi akıl yürütme döngüsü (ADR-009) zaten AYNI kategori içinde
-birden fazla aracı bir turda çağırabiliyor ("kartımı blokla VE bir destek talebi aç") —
-ama bu, supervisor'ın seçtiği TEK kategorinin içinde kalıyor; RAG_QUERY ile CARD_ACTION gibi
-FARKLI kategoriler arasında bir köprü yok.
-
-Bu ihtiyacın ölçülmüş bir kullanıcı verisi yok — bu bir portföy projesi, elde şikayet/log
-yok. Buradaki gerekçe tek-etiketli sınıflandırmanın teorik sınırından geliyor, gözlemlenmiş
-bir talep oranından değil.
+**Ölçülmüş kullanıcı verisi yok.** Bu bir portföy projesi; gerekçe tek-etiketli
+sınıflandırmanın teorik sınırından geliyor, gözlemlenmiş bir talep oranından değil.
 
 ## Araştırma
-
-- **LangGraph supervisor vs. swarm desenleri**: supervisor deseninde her etkileşim bir
-  yönlendirme LLM çağrısından geçiyor (basit istekler için bile), swarm'da ilk ajan mesajı
-  alıyor, karşılayamıyorsa doğrudan uygun uzmana devrediyor, supervisor'a geri dönmeden.
-- **Anthropic'in kendi multi-agent araştırma sistemi**: bir lead agent planlıyor, birden
-  fazla alt-agent'ı paralel çalıştırıyor, sonra bulguları ayrı bir sentez adımıyla
-  birleştiriyor — "orchestrator-worker" deseni. Anthropic'in kendi ölçümünde bu, tek-ajanlı
-  bir kuruluma göre ciddi bir kalite farkı yaratıyor, ama token maliyeti de yaklaşık 15 kat —
-  bu projeyle aynı ölçekte değil (paralel, çok daha yüksek maliyetli bir sistem). Buradan
-  alınan tek şey "birden fazla worker'ı sırayla işletip ayrı bir adımda birleştirme" fikri.
+- **Supervisor vs. swarm**: supervisor'da her etkileşim bir yönlendirme LLM çağrısından
+  geçiyor; swarm'da ilk ajan karşılayamazsa doğrudan uzmana devrediyor.
+- **Anthropic'in multi-agent araştırma sistemi**: lead agent planlıyor, alt-ajanları paralel
+  çalıştırıyor, ayrı bir sentez adımıyla birleştiriyor. Kalite farkı ciddi ama token maliyeti
+  ~15 kat — bu projeyle aynı ölçekte değil. Alınan tek şey: "birden fazla worker'ı işletip
+  ayrı bir adımda birleştirme".
 
 ## Seçenekler
-
-- **A: Değiştirme, tek niyet kalsın.** En basit, ama yukarıdaki senaryo çözülmeden kalıyor.
-- **B: LangGraph'in `Send` API'siyle dinamik paralel fan-out.** Birden fazla worker'ı aynı
-  anda tetikleyip sonuçları map-reduce ile birleştirmek mümkün — ama paralel çalışan
-  worker'lar arasında `iteration_count`/`tool_calls` gibi paylaşılan state alanlarının
-  reducer'larla doğru birleşmesini garanti etmek, özellikle `tool_agent`'ın kendi iç
-  döngüsüyle birlikte, gerçek bir karmaşıklık kaynağı.
-- **C: Sıralı fan-out — mevcut worker düğümlerini değiştirmeden, supervisor'a bir "sıradaki
-  niyet" kuyruğu ve döngüsü eklemek.** Her worker kendi işini bitirince supervisor'a döner;
-  kuyrukta bekleyen bir niyet varsa oraya yönlendirilir; hepsi bitince bir `synthesizer`
-  düğümü toplanan taslakları tek bir cevapta birleştirir.
+- **A: Tek niyet kalsın.** Senaryo çözülmüyor.
+- **B: `Send` API'siyle paralel fan-out.** `iteration_count`/`tool_calls` gibi paylaşılan
+  state alanlarının reducer'larla doğru birleşmesini garanti etmek, `tool_agent`'ın iç
+  döngüsüyle birlikte gerçek bir karmaşıklık kaynağı.
+- **C: Sıralı fan-out.** Supervisor'a "sıradaki niyet" kuyruğu; her worker bitince dönüyor,
+  kuyruk boşalınca `synthesizer` taslakları birleştiriyor.
 
 ## Tercih
+**C.** `tool_calls` zaten `operator.add` ile birikiyor, worker'larda hiçbir değişiklik
+gerekmiyor, ve tek-niyetli mesajlarda (çoğunluk) ek LLM çağrısı yok — `intent_agent`'ın
+mevcut structured-output çağrısına opsiyonel bir `extra_intents` alanı ekleniyor.
 
-**C.** Gerekçe: `tool_calls` zaten `operator.add` reducer'ıyla passlar arası birikiyor,
-`rag_agent`/`smalltalk` içinde hiçbir değişiklik gerekmiyor (state'i tekrar aynı düğümden
-geçiriyoruz), ve tek-niyetli mesajlarda (istatistiksel olarak büyük çoğunluk) hiçbir ek LLM
-çağrısı ya da graf adımı eklenmiyor — sadece `intent_agent`'ın zaten yaptığı structured-output
-çağrısına bir opsiyonel alan (`extra_intents`) ekleniyor.
+Kuyrukta niyet kalırsa `advance_intent_node` (LLM'siz) sıradakini aktif yapıyor, taslağı
+`collected_drafts`'a itiyor. Kuyruk boşalınca birden fazla taslak varsa `synthesizer`
+birleştiriyor, yoksa doğrudan guardrail'e gidiliyor — bugünkü davranışla birebir aynı.
 
-Akış: `intent_agent` (gerçek LLM'de) birincil niyetin yanında en fazla 2 farklı, ilgisiz
-niyet daha döndürebiliyor. `supervisor`'ın router'ı, aktif niyetin worker'ı işini bitirince
-(`worker_pass_done`/`tool_agent_done`) kuyrukta niyet kalıp kalmadığına bakıyor: kaldıysa
-`advance_intent_node` (LLM'siz, sadece state geçişi) sıradakini aktif niyet yapıp worker'a
-yönlendiriyor, bu turdaki taslak cevabı `collected_drafts`'a itiyor. Kuyruk boşalınca, birden
-fazla taslak toplanmışsa `synthesizer` (gerçek LLM'de tek, doğal bir cevaba birleştirir; fake
-modda taslakları numaralandırıp art arda ekler) devreye giriyor, değilse doğrudan guardrail'e
-gidiliyor — bugünkü davranışla birebir aynı.
-
-`ESCALATE`/`OUT_OF_SCOPE` zincire dahil edilmiyor: bir insana aktarım isteği genelde
-konuşmanın o an bittiği anlamına geliyor, art arda başka bir işlem zincirlemek kafa
-karıştırıcı olurdu.
-
-`SMALL_TALK` ilk yazımda zincirden dışlanmıştı — ESCALATE/OUT_OF_SCOPE gibi "konuşmayı
-bitiren niyetler" grubuna konmuştu. Entegrasyon testi ("EFT limitiniz ne kadar, bu arada
-merhaba" gibi bileşik bir mesajın iki worker'ı da tetiklemesini bekliyordu) bu varsayımla
-kırmızı çıktı: SMALL_TALK, ESCALATE/OUT_OF_SCOPE'un aksine konuşmayı bitirmiyor, bir
-selamlamayı bir bilgi/işlem talebiyle birlikte taşımak gayet doğal. Bunun üzerine zincire
-dahil edildi.
+`ESCALATE`/`OUT_OF_SCOPE` zincire dahil değil: insana aktarım isteği genelde konuşmanın
+bittiği anlamına geliyor. `SMALL_TALK` ilk yazımda dışlanmıştı; entegrasyon testi ("EFT
+limitiniz ne kadar, bu arada merhaba") kırmızı çıkınca dahil edildi — selamlama konuşmayı
+bitirmiyor.
 
 ## Sonuçlar
-
-- ✅ "Kartımı blokla ve EFT limitiniz ne kadar?" gibi bileşik istekler tek turda, tek
-  cevapta karşılanıyor — `tests/integration/test_chat_api.py::test_multi_intent_...`
-- ✅ Tek-niyetli mesajlarda davranış ve maliyet birebir aynı kaldı — `extra_intents` boşsa
-  `advance_intent`/`synthesizer` hiç çalışmıyor.
-- ✅ `tool_calls` reducer'ı sayesinde iki farklı kategoriden gelen araç çağrıları
-  (`block_card` + `get_balance`) tek `ChatResponse.tool_calls`'ta doğru birikiyor.
-- ✅ (sonradan eklendi) İlk halinde `extra_intents` sadece gerçek bir LLM'in structured
-  output'undan geliyordu — `LLM_PROVIDER=fake` (varsayılan, anahtarsız `docker compose up`
-  yolu) her zaman boş liste dönüyordu, yani bu turun en yeni parçası kimse anahtarsız
-  çalıştırdığında hiç tetiklenmiyordu. `nlp/intent_classifier.py::_rule_based_extra_intents`
-  bunu kapatıyor: kural tabanlı yol da artık kendi anahtar kelime skorlarından ikincil bir
-  niyet çıkarabiliyor, `intent_agent`'taki `_clean_extra_intents` filtresi (chainable-set +
-  dedup + 2 sınırı) her iki yoldan gelen listeye de aynı şekilde uygulanıyor. Sonuç: "Kartımı
-  blokla ve EFT limitiniz ne kadar?" artık hiçbir anahtar girilmeden de çift worker'ı tetikliyor
-  (daha kaba, keyword-tabanlı bir tespitle — gerçek LLM'in okuduğu anlamı değil). İlk sürümü
-  bunu çok gevşek uyguluyordu (tek bir zayıf kelime eşleşmesi yetiyordu) ve gerçek bir
-  regresyona yol açtı: "Kartımı ne zaman bloke edebilirim, politikanız nedir?" gibi saf bir
-  RAG_QUERY, sadece "bloke" kelimesi geçtiği için CARD_ACTION'ı da extra intent sanıp
-  tool_agent'ı tetikliyor, cevaba alakasız bir "kartının son 4 hanesi?" sorusu ekliyordu
-  (`tests/e2e/test_full_conversation_flow.py`'de yakalandı). Düzeltme: CARD_ACTION/
-  ACCOUNT_ACTION/TRANSACTION_ACTION gibi gerçek bir işlem tetikleyen niyetler artık ya bir
-  entity'yle ya da çok kelimeli, spesifik bir kalıpla desteklenmeden extra intent sayılmıyor;
-  RAG_QUERY/SMALL_TALK gibi düşük riskli niyetler tek eşleşmeyle yetiniyor.
-- ❌ İkinci niyetin işlenmesi, birincinin SONUCUNA bağlı olamıyor ("önce bakiyeme bak,
-  düşükse bir uyarı ekle" gibi) — her pass birbirinden bağımsız çalışıyor, birinin çıktısı
-  diğerinin girdisi olmuyor. Bu, README'nin daha önce de belirttiği "çok adımlı planlama"
-  sınırıyla aynı yerde duruyor; çözümü ayrı bir ADR'yi hak eder.
-- ✅ (sonradan düzeltildi) Her alt-niyet geçişi `state["user_query"]`'nin TAMAMINI görüyordu —
-  kendi bölümüne izole edilmiş bir alt-sorgu metni yoktu. Canlıda gözlemlenmişti: "Kartımı
-  blokla ve EFT limitiniz ne kadar?" gibi bileşik bir mesajda `rag_agent`'ın retrieval sorgusu
-  kart-blokaj kelimeleriyle kirleniyor, daha zayıf/alakasız citation'lar geliyor, model de
-  boşluğu **yanlış bir rakam uydurarak** dolduruyordu (gerçek KB değeri 50.000 TL iken
-  "100.000 TL" dediği görüldü). Düzeltme: `supervisor.py::build_advance_intent_node`, RAG_QUERY'ye
-  geçerken (yalnızca gerçek modda — fake modda no-op) mesajın sadece o kısmını izole edip
-  `state["active_sub_query"]`'ye yazıyor; `rag_agent` bunu tam mesaj yerine tercih ediyor.
-  CARD_ACTION/ACCOUNT_ACTION/TRANSACTION_ACTION'a genişletilmedi — onlar entity-grounded
-  çalıştığı için (bkz. `_validate_tool_args`) gürültülü metinden aynı ölçüde etkilenmiyor.
-- ❌ `max_agent_iterations` tüm turun genelinde tek bir sayaç — bileşik bir istek + her
-  parçasında uzun bir `tool_agent` döngüsü aynı anda olursa, ikinci niyet hiç işlenmeden
-  limite takılabilir. Demo ölçeğinde (varsayılan limit 6) gözlemlenmedi.
-- ❌ Semantik (embedding tabanlı) bir niyet router katmanı eklenmedi — 3 katmanlı
-  (embedding → regex → LLM) bir yaklaşımın parçası olurdu, ve `rag/embeddings.py`
-  altyapısı zaten var. Bilinçli olarak bu tura dahil edilmedi: varsayılan konfigürasyonda
-  (`EMBEDDING_PROVIDER=fake`) `FakeHashEmbeddings` gerçek bir anlamsal benzerlik ölçmüyor,
-  sadece token örtüşmesi ölçüyor — yani regex katmanından somut bir fark yaratmıyor,
-  gerçek değeri ancak `EMBEDDING_PROVIDER=openai` ile ortaya çıkıyor. Sonraki adım olarak
-  net: örnek cümle seti + kosinüs benzerliğiyle bir ön-katman, regex'ten önce.
+- ✅ Bileşik istekler tek turda, tek cevapta karşılanıyor.
+- ✅ Tek-niyetli mesajlarda davranış ve maliyet birebir aynı.
+- ✅ İki kategoriden gelen araç çağrıları (`block_card` + `get_balance`) tek
+  `ChatResponse.tool_calls`'ta doğru birikiyor.
+- ✅ (sonradan) `extra_intents` sadece gerçek LLM'den geliyordu; `LLM_PROVIDER=fake`
+  (anahtarsız `docker compose up` yolu) hep boş liste dönüyordu — turun en yeni parçası
+  anahtarsız çalıştıranlarda hiç tetiklenmiyordu. `_rule_based_extra_intents` bunu kapattı.
+- ✅ (sonradan) İlk kural tabanlı sürüm çok gevşekti: "Kartımı ne zaman bloke edebilirim,
+  politikanız nedir?" saf bir RAG_QUERY'ydi ama sadece "bloke" geçtiği için CARD_ACTION da
+  extra intent sayılıp cevaba alakasız bir "kartının son 4 hanesi?" sorusu ekleniyordu.
+  Düzeltme: işlem tetikleyen niyetler artık bir entity ya da çok kelimeli spesifik bir
+  kalıpla desteklenmeden extra intent sayılmıyor; RAG_QUERY/SMALL_TALK tek eşleşmeyle
+  yetiniyor.
+- ✅ (sonradan) Her alt-niyet `user_query`'nin tamamını görüyordu. Canlıda: bileşik mesajda
+  `rag_agent`'ın retrieval sorgusu kart-blokaj kelimeleriyle kirlenip zayıf citation
+  getiriyor, model boşluğu **yanlış rakam uydurarak** dolduruyordu — gerçek KB değeri
+  50.000 TL iken "100.000 TL" dedi. `advance_intent_node` artık RAG_QUERY'ye geçerken
+  mesajın o kısmını izole edip `active_sub_query`'ye yazıyor. Diğer niyetlere
+  genişletilmedi; onlar entity-grounded çalıştığı için gürültüden aynı ölçüde
+  etkilenmiyor.
+- ❌ İkinci niyet, birincinin **sonucuna** bağlı olamıyor ("bakiyeme bak, düşükse uyarı
+  ekle"). Her pass bağımsız. Çözümü ayrı bir ADR'yi hak eder.
+- ❌ `max_agent_iterations` tüm turda tek sayaç — bileşik istek + uzun `tool_agent`
+  döngüsü aynı anda olursa ikinci niyet limite takılabilir. Demo ölçeğinde gözlemlenmedi.
+- ❌ Semantik (embedding tabanlı) router katmanı eklenmedi. Bilinçli: varsayılan
+  `EMBEDDING_PROVIDER=fake` gerçek anlamsal benzerlik değil token örtüşmesi ölçüyor, yani
+  regex katmanından fark yaratmıyor. Sonraki adım net: örnek cümle seti + kosinüs
+  benzerliğiyle regex'ten önce bir ön-katman.
