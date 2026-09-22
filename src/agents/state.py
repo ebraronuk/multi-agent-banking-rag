@@ -41,6 +41,9 @@ class GraphState(TypedDict, total=False):
     history: list[ChatMessage]
     carried_pending_request: PendingEntityRequest | None
     pending_entity_request: PendingEntityRequest | None
+    # Kullanıcı bekleyen isteği iptal ettiyse, smalltalk düğümü genel
+    # karşılama yerine iptali onaylayan bir cevap veriyor.
+    cancelled_pending: bool
 
     # Aynı carried_X/X deseni, bu kez insana aktarımın hangi aşamada olduğunu
     # taşıyor: None | "verifying" | "awaiting_issue" | "resolved" (ADR-013).

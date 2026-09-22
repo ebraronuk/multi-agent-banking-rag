@@ -164,6 +164,45 @@ def history_to_messages(history: list[ChatMessage]) -> list[BaseMessage]:
     ]
 
 
+# Bekleyen bir isteği İPTAL eden cevaplar. Onay listesiyle simetrik olmak
+# zorunda: sistem "evet"i anlayıp "hayır"ı anlamazsa, kullanıcı başlattığı
+# akıştan çıkamıyor ve her mesajında kart numarası isteniyor.
+NEGATIVE_ANSWERS = frozenset(
+    {
+        "hayır",
+        "hayir",
+        "yok",
+        "olmasın",
+        "istemiyorum",
+        "vazgeçtim",
+        "vazgectim",
+        "boşver",
+        "bosver",
+        "hayır boşver",
+        "hayir bosver",
+        "iptal",
+        "iptal et",
+        "gerek yok",
+        "kalsın",
+        "kalsin",
+        "yok teşekkürler",
+        "hayır teşekkürler",
+    }
+)
+
+
+def is_cancellation(text: str) -> bool:
+    """Kullanıcı bekleyen isteği iptal mi ediyor?
+
+    Kısa mesaj şartı, onay tarafındakiyle aynı gerekçeyle: uzun bir cümlede
+    geçen "yok" kelimesi bir iptal değil.
+    """
+    stripped = text.strip()
+    if len(stripped) > 25:
+        return False
+    return turkish_lower(stripped).strip(" .,!?") in NEGATIVE_ANSWERS
+
+
 _AFFIRMATIVE_ANSWERS = frozenset(
     {
         "evet",
