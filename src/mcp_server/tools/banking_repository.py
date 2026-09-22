@@ -36,6 +36,10 @@ SEED_ACCOUNTS: dict[str, dict[str, object]] = {
         ],
         "cards": [
             {"last4": "4321", "status": "active"},
+            # İkinci kart: db/schema.sql ile aynı. Tek kart olsaydı asistanın
+            # "hangisini işleme alayım?" sorusu hiç görünmez, tek kart bloke
+            # edildikten sonra da hata mesajında önerecek bir şey kalmazdı.
+            {"last4": "7788", "status": "active"},
         ],
     },
     "TR640001000000012345678901": {

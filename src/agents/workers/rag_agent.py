@@ -16,7 +16,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from agents.memory import history_to_messages
 from agents.prompts.rag_prompt import RAG_SYSTEM_PROMPT
 from agents.state import GraphState
-from app.core.llm import safe_ainvoke
+from app.core.llm import is_fake_model, safe_ainvoke
 from rag.retriever import HybridRetriever
 from schemas.dto import AgentTraceStep, Citation
 
@@ -36,6 +36,18 @@ def _build_context_block(citations: list[Citation]) -> str:
     )
 
 
+def _citation_answer(citations: list[Citation]) -> str:
+    """Alıntılardan doğrudan kurulan cevap — model yokken ya da çağrı
+    başarısızken kullanıcı yine kaynaklı bir bilgi görüyor."""
+    if not citations:
+        return (
+            "Bu konuda bilgi tabanımda bir kayıt bulamadım. Sizi bir müşteri "
+            "temsilcisine aktarabilirim."
+        )
+    top = citations[0]
+    return f"{top.snippet.strip()}\n\nKaynak: {top.source}"
+
+
 def build_rag_node(
     retriever: HybridRetriever, llm: BaseChatModel
 ) -> Callable[[GraphState], Awaitable[dict[str, object]]]:
@@ -47,15 +59,22 @@ def build_rag_node(
         citations = retriever.retrieve(query)
         context = _build_context_block(citations)
 
-        draft_answer = await safe_ainvoke(
-            llm,
-            [
-                SystemMessage(content=RAG_SYSTEM_PROMPT),
-                *history_to_messages(state.get("history", [])),
-                HumanMessage(content=f"Bağlam:\n{context}\n\nSoru: {query}"),
-            ],
-            node="rag_agent",
-        )
+        # Sahte model kendi promptunu yankılıyor; ona cümle kurdurmak
+        # kullanıcıya "[fake-llm] Bağlam: ..." göstermek demek. Anahtarsız
+        # çalıştırmada doğrudan alıntı metnine gidiliyor — bilgi aynı,
+        # sadece ifade modelin değil.
+        if is_fake_model(llm):
+            draft_answer = _citation_answer(citations)
+        else:
+            draft_answer = await safe_ainvoke(
+                llm,
+                [
+                    SystemMessage(content=RAG_SYSTEM_PROMPT),
+                    *history_to_messages(state.get("history", [])),
+                    HumanMessage(content=f"Bağlam:\n{context}\n\nSoru: {query}"),
+                ],
+                node="rag_agent",
+            ) or _citation_answer(citations)
 
         return {
             "retrieved_docs": citations,

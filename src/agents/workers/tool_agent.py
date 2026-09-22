@@ -157,8 +157,12 @@ def _build_arguments(tool_name: str, entity_value: str, user_query: str) -> dict
 
 
 def _format_tool_outcome(record: ToolCallRecord) -> str:
-    """Özetleme çağrısı başarısız olursa kullanıcıya doğrudan gösterilebilir —
-    dict sonuçlar bu yüzden Python repr değil JSON ile formatlanıyor."""
+    """MODELE verilen ham özet. Kullanıcıya asla bu gösterilmiyor.
+
+    Ayrım önemli: model bu metni okuyup cümle kuruyor, ama model yoksa ya da
+    çağrı başarısız olursa kullanıcının göreceği şey `humanize_tool_result`.
+    Bu ikisi karıştığı için canlıda ekrana ham JSON çıkmıştı.
+    """
     if record.ok:
         result = (
             json.dumps(record.result, ensure_ascii=False)
@@ -167,6 +171,55 @@ def _format_tool_outcome(record: ToolCallRecord) -> str:
         )
         return f"Araç: {record.tool_name}\nSonuç: {result}"
     return f"Araç: {record.tool_name}\nHata: {record.error or 'bilinmeyen hata'}"
+
+
+def _amount(value: object) -> str:
+    try:
+        return f"{float(str(value)):,.2f}".replace(",", "#").replace(".", ",").replace("#", ".")
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def humanize_tool_result(record: ToolCallRecord) -> str:
+    """Başarılı bir araç çağrısının KULLANICIYA gösterilecek hâli.
+
+    Neden deterministik: demo varsayılan olarak `LLM_PROVIDER=fake` ile
+    çalışıyor ve sahte model kendi promptunu yankılıyor — yani demoyu açan
+    herkes ekranda ham JSON görüyordu. Gerçek modelde de bu metin yedek
+    olarak duruyor: sağlayıcı kesintisinde kullanıcı yine anlamlı bir cümle
+    görüyor, bir `{"ok": true, ...}` değil.
+    """
+    data = record.result.get("data") if isinstance(record.result, dict) else None
+    if not isinstance(data, dict):
+        return "İşleminiz tamamlandı."
+
+    if record.tool_name == "block_card":
+        return (
+            f"{data.get('last4')} ile biten kartınız bloke edildi. "
+            "Yeni kart talebinizi uygulama üzerinden oluşturabilirsiniz."
+        )
+    if record.tool_name == "get_balance":
+        return (
+            f"Hesabınızda {_amount(data.get('balance'))} "
+            f"{data.get('currency', 'TL')} bulunuyor."
+        )
+    if record.tool_name == "list_transactions":
+        rows = data.get("transactions") or []
+        if not isinstance(rows, list) or not rows:
+            return "Bu hesapta gösterilecek bir işlem bulamadım."
+        lines = [
+            f"- {r.get('description', '-')}: {_amount(r.get('amount'))} TL"
+            for r in rows[:5]
+            if isinstance(r, dict)
+        ]
+        more = f"\n(Son {len(rows)} işlemin ilk {len(lines)} tanesi.)" if len(rows) > len(lines) else ""
+        return "Son işlemleriniz:\n" + "\n".join(lines) + more
+    if record.tool_name == "open_support_ticket":
+        return (
+            f"Talebiniz {data.get('ticket_id')} numarasıyla kaydedildi. "
+            "En geç 24 saat içinde size dönüş yapılacak."
+        )
+    return "İşleminiz tamamlandı."
 
 
 async def _deterministic_tool_call(
@@ -203,6 +256,20 @@ async def _deterministic_tool_call(
         # Kart sorusunda kimlik kanıtı istemek yerine seçenek sunuluyor:
         # kullanıcı zaten giriş yapmış durumda, kartlarını biliyoruz
         # (bkz. app/core/session.py). Liste alınamazsa eski metne düşülüyor.
+        # IBAN'da hiç sormuyoruz: oturumdaki müşterinin hesabı zaten belli.
+        # "Hesabınızın IBAN'ı nedir?" diye sormak, kullanıcıya kendi bankasının
+        # bildiği bir şeyi ezberden yazdırmak demekti.
+        if entity_type is EntityType.IBAN:
+            session = get_session(get_settings())
+            if session.account_id:
+                logger.info("tool_agent_iban_from_session", intent=intent)
+                entity = Entity(
+                    type=EntityType.IBAN,
+                    value=session.account_id,
+                    normalized=session.account_id,
+                )
+
+    if entity is None:
         prompt_message = missing_message
         if entity_type is EntityType.CARD_LAST4:
             prompt_message = await _card_choice_prompt(tool_client) or missing_message
@@ -258,16 +325,21 @@ async def _deterministic_tool_call(
 
     # Özetleyen LLM çağrısı başarısız olursa (sağlayıcı kesintisi) deterministik
     # formatlayıcıya düş — araç sonucu record'da zaten gerçek veri olarak duruyor.
-    draft_answer = await safe_ainvoke(
-        llm,
-        [
-            SystemMessage(content=TOOL_RESULT_SYSTEM_PROMPT),
-            HumanMessage(
-                content=f"Kullanıcı sorusu: {state['user_query']}\n\n{_format_tool_outcome(record)}"
-            ),
-        ],
-        node="tool_agent",
-    ) or _format_tool_outcome(record)
+    # Sahte model kendi promptunu yankılıyor — ona cümle kurdurmak, kullanıcıya
+    # ham JSON göstermek demek. Fake modda doğrudan deterministik metne gidiliyor.
+    if is_fake_model(llm):
+        draft_answer = humanize_tool_result(record)
+    else:
+        draft_answer = await safe_ainvoke(
+            llm,
+            [
+                SystemMessage(content=TOOL_RESULT_SYSTEM_PROMPT),
+                HumanMessage(
+                    content=f"Kullanıcı sorusu: {state['user_query']}\n\n{_format_tool_outcome(record)}"
+                ),
+            ],
+            node="tool_agent",
+        ) or humanize_tool_result(record)
 
     logger.info(
         "tool_agent_call_completed",

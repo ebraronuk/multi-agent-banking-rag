@@ -15,23 +15,31 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from agents.memory import history_to_messages
 from agents.prompts.smalltalk_prompt import SMALLTALK_SYSTEM_PROMPT
 from agents.state import GraphState
-from app.core.llm import safe_ainvoke
+from app.core.llm import is_fake_model, safe_ainvoke
 from schemas.dto import AgentTraceStep
+
+_FALLBACK_GREETING = (
+    "Merhaba, ben DemoBank asistanıyım. Bakiye, işlem geçmişi, kart işlemleri "
+    "ve banka hizmetleriyle ilgili sorularınızda yardımcı olabilirim."
+)
 
 
 def build_smalltalk_node(
     llm: BaseChatModel,
 ) -> Callable[[GraphState], Awaitable[dict[str, object]]]:
     async def smalltalk_node(state: GraphState) -> dict[str, object]:
-        draft_answer = await safe_ainvoke(
-            llm,
-            [
-                SystemMessage(content=SMALLTALK_SYSTEM_PROMPT),
-                *history_to_messages(state.get("history", [])),
-                HumanMessage(content=state["user_query"]),
-            ],
-            node="smalltalk",
-        )
+        if is_fake_model(llm):
+            draft_answer = _FALLBACK_GREETING
+        else:
+            draft_answer = await safe_ainvoke(
+                llm,
+                [
+                    SystemMessage(content=SMALLTALK_SYSTEM_PROMPT),
+                    *history_to_messages(state.get("history", [])),
+                    HumanMessage(content=state["user_query"]),
+                ],
+                node="smalltalk",
+            ) or _FALLBACK_GREETING
         return {
             "draft_answer": draft_answer,
             "worker_pass_done": True,

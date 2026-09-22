@@ -194,13 +194,53 @@ async def test_chat_survives_a_downstream_tool_failure_without_500(
 async def test_chat_survives_a_total_llm_outage_without_500(
     client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Aynı kanıt, LLM sağlayıcısı tarafı için: `safe_ainvoke` bir istisnayı
-    yutup None döndürüyor iddiası vardı (ADR-007) — burada gerçekten kanıtlanıyor."""
+    """Aynı kanıt, LLM sağlayıcısı tarafı için (ADR-007).
+
+    BEKLENTİ DEĞİŞTİ. Eskiden bu test, sağlayıcı çöktüğünde kullanıcının
+    "bu talebi şu an yanıtlayamadım" mesajını görmesini bekliyordu. Artık
+    RAG düğümü sahte modelde modeli hiç çağırmıyor (çağırınca kullanıcıya
+    ham prompt yankısı gidiyordu) ve doğrudan alıntıya düşüyor.
+
+    Sözleşme aynı kaldı, sonuç iyileşti: bağımlılık çökse bile 500 yok,
+    boş cevap yok — ve kullanıcı "yanıtlayamadım" yerine bilgi tabanındaki
+    gerçek cevabı kaynağıyla görüyor. Bir dış sağlayıcı kesintisinin
+    kullanıcıya hiç yansımaması, yansımasından iyi.
+    """
 
     def _boom(self: object, *args: object, **kwargs: object) -> object:
         raise RuntimeError("simulated provider outage")
 
     monkeypatch.setattr(FakeChatModel, "_generate", _boom)
+
+    response = await client.post("/chat", json={"message": "EFT limitiniz ne kadar?"})
+
+    assert response.status_code == 200
+    body = response.json()
+    answer = body["answer"]
+    assert answer, "sağlayıcı çökünce cevap boş kalmamalı"
+    # Kullanıcıya ham iç veri sızmamalı — çökme anında bile.
+    for marker in ("[fake-llm]", '{"ok"', "Araç:", "Hata:"):
+        assert marker not in answer, f"kesinti sırasında '{marker}' sızdı: {answer[:120]!r}"
+    # Ve cevap gerçekten bilgi tabanından gelmiş olmalı, boş bir nezaket değil.
+    assert body["citations"], "alıntı üretilmemiş"
+
+
+async def test_llm_outage_on_a_path_without_citations_falls_back_politely(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Alıntı üretilemeyen bir yolda kesinti: nazik yedek mesaj devreye girmeli.
+
+    Yukarıdaki test artık RAG'in alıntıya düşebildiği mutlu yolu kanıtlıyor;
+    bu da düşecek bir şeyin olmadığı durumu — `NO_DRAFT_FALLBACK_MESSAGE`
+    sözleşmesi hâlâ ayakta."""
+
+    def _boom(self: object, *args: object, **kwargs: object) -> object:
+        raise RuntimeError("simulated provider outage")
+
+    monkeypatch.setattr(FakeChatModel, "_generate", _boom)
+    monkeypatch.setattr(
+        "agents.workers.rag_agent._citation_answer", lambda _citations: None
+    )
 
     response = await client.post("/chat", json={"message": "EFT limitiniz ne kadar?"})
 
