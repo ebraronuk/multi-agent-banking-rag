@@ -12,6 +12,7 @@ from agents.state import new_state
 from app.core.config import get_settings
 from app.core.logging import bind_request_context, get_logger
 from app.core.rate_limit import limiter
+from app.core.tracing import build_trace_config
 from schemas.dto import ChatRequest, ChatResponse, ErrorResponse, IntentLabel
 
 logger = get_logger(__name__)
@@ -43,7 +44,15 @@ async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
     with bind_request_context(request_id, conversation_id):
         logger.info("chat_request_received", message_length=len(payload.message))
         graph = request.app.state.graph
-        final_state = await graph.ainvoke(new_state(conversation_id, payload.message))
+        trace_config = build_trace_config(
+            get_settings(),
+            conversation_id=conversation_id,
+            request_id=request_id,
+        )
+        final_state = await graph.ainvoke(
+            new_state(conversation_id, payload.message),
+            config=trace_config,
+        )
         logger.info(
             "chat_request_completed",
             intent=final_state.get("intent"),

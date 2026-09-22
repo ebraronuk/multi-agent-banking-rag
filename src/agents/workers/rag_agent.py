@@ -20,8 +20,16 @@ from app.core.llm import safe_ainvoke
 from rag.retriever import HybridRetriever
 from schemas.dto import AgentTraceStep, Citation
 
+_NO_CONTEXT_FOUND = "(İlgili bağlam bulunamadı.)"
+
 
 def _build_context_block(citations: list[Citation]) -> str:
+    """Retrieval sıfır sonuç dönerse boş bir string yerine açık bir sinyal
+    verir — modelin "boş bağlam = cevap veremem" çıkarımını sessizce yapmasına
+    güvenmek yerine (2026 RAG hatalarının çoğunun kaynağı: sessiz retrieval
+    başarısızlığı, model fark etmeden kendi bilgisiyle dolduruyor)."""
+    if not citations:
+        return _NO_CONTEXT_FOUND
     return "\n".join(
         f"[{index}] {citation.title}: {citation.snippet}"
         for index, citation in enumerate(citations, start=1)

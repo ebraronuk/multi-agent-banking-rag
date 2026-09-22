@@ -18,6 +18,7 @@ from app.api.routes import chat, health
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
 from app.core.rate_limit import limiter
+from app.core.tracing import flush_traces, tracing_status
 from schemas.dto import ErrorCode, ErrorResponse
 
 logger = get_logger(__name__)
@@ -56,8 +57,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app_env=settings.app_env,
         llm_provider=settings.resolved_llm_provider(),
         embedding_provider=settings.embedding_provider,
+        tracing=tracing_status(settings),
     )
     yield
+    # Langfuse arka planda batch'liyor; flush edilmezse kapanışta son
+    # trace'ler kaybolur.
+    flush_traces()
     logger.info("app_shutdown")
 
 
