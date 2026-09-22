@@ -37,6 +37,12 @@ async def list_transactions(account_id: str, limit: int = 10) -> dict[str, objec
 
 
 @mcp.tool()
+async def list_cards(account_id: str) -> dict[str, object]:
+    """Müşterinin kartlarını listeler (son 4 hane + durum)."""
+    return await _repository.list_cards(account_id)
+
+
+@mcp.tool()
 async def block_card(card_last4: str, reason: str) -> dict[str, object]:
     """Son 4 hanesiyle belirtilen bir DemoBank kartını bloklar (kayıp/çalıntı bildirimi vb.)."""
     return await _repository.block_card(card_last4, reason=reason)

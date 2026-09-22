@@ -96,7 +96,7 @@ class MCPToolClient:
 
 # Araç adı -> BankingRepository metod adı. mcp_server/server.py'deki
 # @mcp.tool() adlarıyla birebir aynı stringler.
-_TOOL_NAMES = ("get_balance", "list_transactions", "block_card", "open_support_ticket")
+_TOOL_NAMES = ("get_balance", "list_transactions", "list_cards", "block_card", "open_support_ticket")
 
 
 class InProcessToolClient:

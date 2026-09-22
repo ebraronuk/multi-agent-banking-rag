@@ -59,6 +59,13 @@ class Settings(BaseSettings):
 
     max_agent_iterations: int = Field(default=6, ge=1, le=20)
 
+    # --- Oturum açmış müşteri (demo) ------------------------------------------
+    # Gerçek üründe bu değerler oturum belirtecinden gelir. Burada sabit:
+    # amaç "asistan kullanıcıyı tanır" varsayımını sisteme sokmak, gerçek bir
+    # kimlik doğrulama kurmak değil (bkz. app/core/session.py).
+    demo_customer_name: str = "Ayşe Demir"
+    demo_account_id: str = "TR330006100519786457841326"
+
     # --- Gözlemlenebilirlik (Langfuse) ---------------------------------------
     # LLM sistemlerinde asıl zorluk hatayı görmek değil, hangi katmanda
     # olduğunu görmek. Trace'siz bir ajan grafiğinde "yanlış cevap"ın

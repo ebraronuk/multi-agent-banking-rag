@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Awaitable, Callable
+from typing import cast
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, ToolMessage
@@ -20,9 +21,10 @@ from agents.memory import history_to_messages
 from agents.prompts.tool_prompt import TOOL_REASONING_SYSTEM_PROMPT, TOOL_RESULT_SYSTEM_PROMPT
 from agents.state import GraphState
 from agents.tools.mcp_client import InProcessToolClient, MCPToolClient
-from app.core.config import Settings
+from app.core.config import Settings, get_settings
 from app.core.llm import content_to_text, is_fake_model, safe_ainvoke, safe_ainvoke_message
 from app.core.logging import get_logger
+from app.core.session import get_session
 from schemas.dto import (
     AgentTraceStep,
     Entity,
@@ -34,14 +36,60 @@ from schemas.dto import (
 
 logger = get_logger(__name__)
 
+# Bu mesajlar yalnızca oturum/kart bilgisi alınamadığında kullanılıyor.
+# Normal yolda asistan kullanıcının hesabını ve kartlarını zaten biliyor ve
+# kimlik kanıtı istemek yerine seçenek sunuyor — bkz. `build_card_prompt`.
 _MISSING_IBAN_MESSAGE = (
-    "Bu işlemi gerçekleştirebilmem için hesabınızın IBAN numarasına ihtiyacım var. "
-    "Paylaşabilir misiniz?"
+    "Hesap bilgilerinize şu an ulaşamadım. IBAN'ınızı paylaşabilir misiniz?"
 )
 _MISSING_CARD_MESSAGE = (
-    "Bu işlemi gerçekleştirebilmem için kartınızın son 4 hanesine ihtiyacım var. "
-    "Paylaşabilir misiniz?"
+    "Kart bilgilerinize şu an ulaşamadım. Kartınızın son 4 hanesini paylaşabilir misiniz?"
 )
+
+# Araç hata kodları -> kullanıcıya gösterilebilir Türkçe karşılık.
+# Ham kod ("CARD_NOT_FOUND") ekrana çıkmamalı: kullanıcı için hiçbir anlamı yok
+# ve ne yapması gerektiğini söylemiyor. Bu eşleşme, demoyu ilk açan birinin
+# rastgele bir numara girip "sistem patladı" izlenimi almasını engelliyor.
+TOOL_ERROR_MESSAGES: dict[str, str] = {
+    "CARD_NOT_FOUND": (
+        "Bu numarayla biten bir kartınızı bulamadım. Kayıtlı kartlarınız: {cards}. "
+        "Hangisini işleme alayım?"
+    ),
+    "ACCOUNT_NOT_FOUND": (
+        "Bu IBAN'a ait bir hesap bulamadım. Kayıtlı hesabınız: {account}."
+    ),
+    "BANKING_SERVICE_UNAVAILABLE": (
+        "Bankacılık servisine şu an ulaşamıyorum. Birkaç dakika içinde tekrar dener "
+        "misiniz? Acil bir durumsa sizi bir müşteri temsilcisine aktarabilirim."
+    ),
+}
+_GENERIC_TOOL_ERROR = (
+    "Bu işlemi şu an tamamlayamadım. Tekrar denemek ister misiniz, yoksa sizi bir "
+    "müşteri temsilcisine aktarayım mı?"
+)
+
+
+def build_card_prompt(cards: list[dict[str, object]]) -> str:
+    """Kart sorusunu kimlik kanıtından netleştirmeye çeviren metin.
+
+    Tek kart varsa soru bile sorulmuyor — kullanıcıya zaten bildiğimiz bir
+    şeyi sormak, sistemin kendi verisini görmezden gelmesi demek.
+    """
+    usable = [c for c in cards if c.get("status") != "blocked"]
+    if not usable:
+        return "Kayıtlı aktif kartınız görünmüyor. Sizi bir müşteri temsilcisine aktarabilirim."
+    if len(usable) == 1:
+        return f"{usable[0]['last4']} ile biten kartınız için onaylıyor musunuz?"
+    listed = ", ".join(f"{c['last4']} ile biten" for c in usable)
+    return f"{listed} kartlarınız var. Hangisini işleme alayım?"
+
+
+def humanize_tool_error(code: str, *, cards: str = "", account: str = "") -> str:
+    """Ham hata kodunu kullanıcıya dönük mesaja çevirir."""
+    template = TOOL_ERROR_MESSAGES.get(code)
+    if template is None:
+        return _GENERIC_TOOL_ERROR
+    return template.format(cards=cards or "kayıtlı kart yok", account=account or "-")
 _UNSUPPORTED_INTENT_MESSAGE = (
     "Bu talebi şu an işleyemedim. Bir müşteri temsilcisine aktarabilirim, ister misiniz?"
 )
@@ -59,6 +107,41 @@ _INTENT_TOOL_MAP: dict[IntentLabel, tuple[EntityType, str, str]] = {
 }
 
 _MAX_TOOL_CALLS_PER_HOP = 3
+
+
+async def _card_list_text(
+    tool_client: MCPToolClient | InProcessToolClient,
+) -> str:
+    """Hata mesajına gömülecek kart listesi. Alınamazsa boş döner."""
+    cards = await _fetch_cards(tool_client)
+    usable = [c for c in cards if c.get("status") != "blocked"]
+    return ", ".join(f"{c['last4']} ile biten" for c in usable)
+
+
+async def _fetch_cards(
+    tool_client: MCPToolClient | InProcessToolClient,
+) -> list[dict[str, object]]:
+    session = get_session(get_settings())
+    record = await tool_client.call_tool("list_cards", {"account_id": session.account_id})
+    if not record.ok or not isinstance(record.result, dict):
+        logger.info("tool_agent_list_cards_unavailable", error=record.error)
+        return []
+    data = record.result.get("data")
+    if not isinstance(data, dict):
+        return []
+    return cast("list[dict[str, object]]", data.get("cards", []))
+
+
+async def _card_choice_prompt(
+    tool_client: MCPToolClient | InProcessToolClient,
+) -> str | None:
+    """Oturumdaki müşterinin kartlarını çekip netleştirme sorusunu kurar.
+
+    `None` dönerse çağıran taraf eski "son 4 hane" metnine düşüyor —
+    kartları çekememek işlemi tamamen durdurmamalı.
+    """
+    cards = await _fetch_cards(tool_client)
+    return build_card_prompt(cards) if cards else None
 
 
 def _find_entity(entities: list[Entity], entity_type: EntityType) -> Entity | None:
@@ -117,8 +200,14 @@ async def _deterministic_tool_call(
         # `pending_entity_request`, bir sonraki turn'ün çıplak cevabının (ör. "1234")
         # sıfırdan sınıflandırılmak yerine bu isteği tamamlamasını sağlıyor (ADR-008).
         logger.info("tool_agent_missing_entity", intent=intent, entity_type=entity_type)
+        # Kart sorusunda kimlik kanıtı istemek yerine seçenek sunuluyor:
+        # kullanıcı zaten giriş yapmış durumda, kartlarını biliyoruz
+        # (bkz. app/core/session.py). Liste alınamazsa eski metne düşülüyor.
+        prompt_message = missing_message
+        if entity_type is EntityType.CARD_LAST4:
+            prompt_message = await _card_choice_prompt(tool_client) or missing_message
         return {
-            "draft_answer": missing_message,
+            "draft_answer": prompt_message,
             "tool_agent_done": True,
             "pending_entity_request": PendingEntityRequest(
                 intent=intent, entity_type=entity_type, original_message=state["user_query"]
@@ -139,6 +228,33 @@ async def _deterministic_tool_call(
     arguments = _build_arguments(tool_name, entity_value, reason_source)
 
     record = await tool_client.call_tool(tool_name, arguments)
+
+    # Araç iş kuralı hatasıyla döndüyse cevabı MODELE YAZDIRMIYORUZ.
+    # İki sebep: (1) "CARD_NOT_FOUND" gibi ham bir kod kullanıcıya hiçbir şey
+    # söylemiyor ve canlıda doğrudan ekrana çıkıyordu, (2) modelden bir hata
+    # kodunu açıklamasını istemek, açıklamayı da doğaçlamasına izin vermek
+    # demek — hata mesajı, cevabın en az tahmin edilebilir olması gereken yeri.
+    # Deterministik metin, ayrıca kullanıcıya ne yapacağını da söylüyor.
+    if not record.ok and record.error:
+        error_answer = humanize_tool_error(
+            record.error,
+            cards=await _card_list_text(tool_client),
+            account=get_session(get_settings()).masked_account,
+        )
+        logger.info("tool_agent_error_humanized", tool_name=tool_name, code=record.error)
+        return {
+            "tool_calls": [record],
+            "draft_answer": error_answer,
+            "iteration_count": state.get("iteration_count", 0) + 1,
+            "tool_agent_done": True,
+            "trace": [
+                AgentTraceStep(
+                    node="tool_agent",
+                    summary=f"called {tool_name} (ok=False, code={record.error})",
+                    metadata={"tool_name": tool_name, "ok": False, "error_code": record.error},
+                )
+            ],
+        }
 
     # Özetleyen LLM çağrısı başarısız olursa (sağlayıcı kesintisi) deterministik
     # formatlayıcıya düş — araç sonucu record'da zaten gerçek veri olarak duruyor.
