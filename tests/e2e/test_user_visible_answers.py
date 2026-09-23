@@ -320,3 +320,47 @@ async def test_islem_listesi_de_hesabi_adlandiriyor(client: AsyncClient) -> None
     answer = str(body["answer"])
     _assert_human_readable(answer, "son işlemlerim")
     assert "TR" in answer, "işlem listesi hangi hesaba ait söylenmiyor"
+
+
+@pytest.mark.asyncio
+async def test_takip_sorusu_konuyu_suruduruyor(client: AsyncClient) -> None:
+    """"eft limiti" -> "peki ya havale ücreti": ikinci mesaj tek başına hiçbir
+    anahtar kelimeye anchor'lanamıyor ve OUT_OF_SCOPE'a düşüyordu. Kullanıcı
+    az önce cevaplanan konunun devamında "yardımcı olamıyorum" duyuyordu.
+    """
+    first = await _chat(client, "eft limiti")
+    assert first["intent"] == "RAG_QUERY"
+    second = await _chat(
+        client, "peki ya havale ücreti", conversation_id=str(first["conversation_id"])
+    )
+    assert second["intent"] == "RAG_QUERY", "takip sorusu konuyu kaybetti"
+    _assert_human_readable(str(second["answer"]), "takip sorusu")
+    assert second["citations"], "takip sorusuna kaynaksız cevap verildi"
+
+
+@pytest.mark.asyncio
+async def test_gecmis_yokken_takip_mantigi_devreye_girmiyor(client: AsyncClient) -> None:
+    """Konuşmanın ilk mesajı bir takip olamaz — mevcut davranış bozulmamalı."""
+    body = await _chat(client, "peki ya havale")
+    assert body["intent"] == "OUT_OF_SCOPE"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("greeting", ["slm", "sa", "mrb"])
+async def test_kisaltma_selamlar_taniniyor(client: AsyncClient, greeting: str) -> None:
+    """Kısaltmalar TAM MESAJ olarak eşleşiyor; anahtar kelime listesine
+    koymak "kaslm" gibi bir typo'da yanlış-pozitif üretirdi."""
+    body = await _chat(client, greeting)
+    assert body["intent"] == "SMALL_TALK", f"{greeting!r} selam sayılmadı"
+
+
+@pytest.mark.asyncio
+async def test_cevaplarda_ham_markdown_basligi_yok(client: AsyncClient) -> None:
+    """Doküman başlığı ("# Hesap İşletim Ücretleri") cevabın başına yapışıp
+    tek cümleye dönüşüyordu. Başlık zaten `Citation.title` alanında."""
+    body = await _chat(client, "hesap işletim ücreti")
+    answer = str(body["answer"])
+    _assert_human_readable(answer, "hesap işletim ücreti")
+    assert not answer.lstrip().startswith("#"), f"ham markdown başlığı: {answer[:60]!r}"
+    for citation in body["citations"]:
+        assert not str(citation["snippet"]).lstrip().startswith("#")

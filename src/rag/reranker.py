@@ -23,7 +23,12 @@ def _clean_snippet(text: str, limit: int = _SNIPPET_LENGTH) -> str:
     kullanıcıya bozuk görünüyor. Önce cümle sonu aranıyor, yoksa son tam
     kelimede kesilip üç nokta konuyor.
     """
-    collapsed = " ".join(text.split())
+    # Markdown başlığı ("# Hesap İşletim Ücretleri") cevabın başına
+    # yapışıyordu: doküman içinde anlamlı ama sohbette "# Hesap İşletim
+    # Ücretleri DemoBank A.Ş., hesap paketine göre..." diye tek cümleye
+    # dönüşüyor ve okunaksız. Başlık `Citation.title` alanında zaten var.
+    lines = [line for line in text.splitlines() if not line.lstrip().startswith("#")]
+    collapsed = " ".join(" ".join(lines).split()) or " ".join(text.split())
     if len(collapsed) <= limit:
         return collapsed
     window = collapsed[:limit]

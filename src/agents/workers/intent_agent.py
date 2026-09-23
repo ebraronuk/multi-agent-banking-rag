@@ -17,6 +17,7 @@ from agents.state import GraphState
 from agents.supervisor import TOOL_DRIVEN_INTENTS
 from nlp.intent_classifier import classify_intent
 from nlp.ner_extractor import extract_entities
+from nlp.text_utils import ascii_fold
 from schemas.dto import AgentTraceStep, IntentLabel
 
 # Zincirlenebilir niyetler (ADR-012). ESCALATE/OUT_OF_SCOPE dahil değil —
@@ -36,6 +37,61 @@ def _clean_extra_intents(primary: IntentLabel, raw: list[IntentLabel]) -> list[I
         if len(cleaned) >= _MAX_EXTRA_INTENTS:
             break
     return cleaned
+
+
+# Bir önceki konuya bağlanan ifadeler. Dar tutuldu: "peki", "ya", "başka" gibi
+# kelimeler tek başına bir konu açmıyor, hep bir öncekine gönderme yapıyor.
+_FOLLOW_UP_MARKERS: tuple[str, ...] = (
+    "peki",
+    "ya ",
+    "başka",
+    "baska",
+    "onun",
+    "bunun",
+    "aynısı",
+    "aynisi",
+    "ayrıca",
+    "ayrica",
+    "bir de",
+)
+
+
+def _last_user_message(state: GraphState) -> str | None:
+    for message in reversed(state.get("history", [])):
+        if message.role == "user":
+            return message.content
+    return None
+
+
+def _continue_previous_topic(state: GraphState) -> dict[str, object] | None:
+    """Kısa bir takip sorusunu önceki konunun devamı olarak ele alır.
+
+    Önceki soruyla birleştirilmiş bir metin `active_sub_query`ye yazılıyor:
+    "peki ya havale" tek başına hiçbir şey getirmez, "eft limiti peki ya
+    havale" doğru dokümana gider. Ham mesaj değiştirilmiyor — kullanıcının
+    yazdığı şey trace'te olduğu gibi duruyor.
+    """
+    text = state["user_query"].strip()
+    if len(text) > 40:
+        return None
+    folded = ascii_fold(text)
+    if not any(ascii_fold(marker) in folded for marker in _FOLLOW_UP_MARKERS):
+        return None
+    previous = _last_user_message(state)
+    if not previous:
+        return None
+    return {
+        "intent": IntentLabel.RAG_QUERY,
+        "intent_confidence": 0.4,
+        "extra_intents": [],
+        "active_sub_query": f"{previous} {text}",
+        "trace": [
+            AgentTraceStep(
+                node="intent_agent",
+                summary="treated as follow-up to the previous question",
+            )
+        ],
+    }
 
 
 def build_intent_node(llm: BaseChatModel) -> Callable[[GraphState], Awaitable[dict[str, object]]]:
@@ -99,6 +155,17 @@ def build_intent_node(llm: BaseChatModel) -> Callable[[GraphState], Awaitable[di
         intent, confidence, extra_intents_raw = await classify_intent(
             state["user_query"], entities, llm
         )
+
+        # Takip sorusu: "eft limiti" -> "peki ya havale". Tek başına hiçbir
+        # anahtar kelimeye anchor'lanamayan bu mesaj OUT_OF_SCOPE'a düşüyor ve
+        # kullanıcı az önce cevaplanan konunun devamında "yardımcı olamıyorum"
+        # duyuyordu. Yalnızca OUT_OF_SCOPE'ta devreye giriyor — başka bir
+        # niyet zaten bulunmuşsa ona dokunmuyor, yani mevcut davranışı
+        # bozmadan sadece "bilmiyorum" cevabını iyileştiriyor.
+        if intent is IntentLabel.OUT_OF_SCOPE:
+            continued = _continue_previous_topic(state)
+            if continued is not None:
+                return continued
         extra_intents = _clean_extra_intents(intent, extra_intents_raw)
         summary = f"classified as {intent} (confidence={confidence:.2f})"
         if extra_intents:
