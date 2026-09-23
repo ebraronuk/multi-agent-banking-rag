@@ -248,6 +248,19 @@ _AFFIRMATIVE_ANSWERS = frozenset(
 )
 
 
+def is_bare_confirmation(text: str) -> bool:
+    """Mesaj tek başına bir onay/ret cevabı mı ("evet", "hayır", "tamam")?
+
+    Bekleyen bir soru varken bunlar zaten `synthesize_bare_answer_entity` ve
+    `split_cancellation` tarafından işleniyor. Bu fonksiyon tersi durum için:
+    ortada soru yokken gelen çıplak bir "evet"i tanımak. Önceki davranışta
+    böyle bir mesaj kapsam dışı sayılıp uzun ret metnini alıyordu — oysa
+    kullanıcı bir şeyi onaylamaya çalışıyor, sadece neyi olduğu kaybolmuş.
+    """
+    normalized = turkish_lower(text.strip()).strip(" .,!?")
+    return normalized in _AFFIRMATIVE_ANSWERS or normalized in NEGATIVE_ANSWERS
+
+
 def synthesize_bare_answer_entity(
     text: str, pending: PendingEntityRequest
 ) -> tuple[IntentLabel, EntityType, str] | None:

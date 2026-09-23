@@ -241,6 +241,15 @@ def _score_intents(text: str, entities: list[Entity]) -> dict[IntentLabel, int]:
 # Gereksiz yere insana aktarmak, şikayete bakiye okumaktan iyidir.
 _COMPLAINT_MARKERS: tuple[str, ...] = (
     "rezalet",
+    # "rezil" kökü: "rezil oldum", "rezil ettiniz", "rezillik". Canlıda
+    # "kartım çalışmıyor 3 gündür rezil oldum" mesajı bu listeye takılmıyor,
+    # "kart çalışm" anahtarına takılıp CARD_ACTION'a düşüyor ve kızgın
+    # kullanıcıya kartını bloke etme onayı soruluyordu.
+    "rezil",
+    "mağdur",
+    "magdur",
+    "perişan",
+    "perisan",
     "berbat",
     "şikayet",
     "sikayet",
@@ -298,6 +307,51 @@ def _is_greeting_shorthand(text: str) -> bool:
     return ascii_fold(text).strip(" .,!?") in _GREETING_SHORTHAND
 
 
+# "Sen kimsin", "neler yapabiliyorsun", "yardım" — bir asistana sorulan ilk
+# sorular. Bunlar OUT_OF_SCOPE'a düşüyordu, yani sistem kapsam dışı metninde
+# yeteneklerini sayarken aynı cümleye "bu konuda size yardımcı olamıyorum"
+# diye başlıyordu. Cevabı zaten biliyordu; onu bir reddedişin içine
+# sarmalamıştı.
+_CAPABILITY_EXACT = frozenset(
+    {
+        "yardim",
+        "help",
+        "kimsin",
+        "sen kimsin",
+        "sen nesin",
+        "nesin",
+        "napabilirsin",
+        "ne yapabilirsin",
+        "menu",
+        "secenekler",
+    }
+)
+_CAPABILITY_PHRASES: tuple[str, ...] = (
+    "neler yapabil",
+    "ne yapabil",
+    "nelerde yardimci",
+    "hangi konularda",
+    "ne ise yariyorsun",
+    "nasil kullanilir sen",
+    "yardim eder misin",
+    "what can you do",
+    "who are you",
+)
+# Uzunluk sınırı bilinçli: "kredi kartı limitimi nasıl artırabilirim, bu
+# konuda ne yapabilirsiniz" bir yetenek sorusu değil, gerçek bir istek.
+_CAPABILITY_MAX_LEN = 45
+
+
+def is_capability_question(text: str) -> bool:
+    """Kullanıcı asistanın ne olduğunu / ne yapabildiğini mi soruyor?"""
+    folded = ascii_fold(text).strip(" .,!?")
+    if folded in _CAPABILITY_EXACT:
+        return True
+    if len(folded) > _CAPABILITY_MAX_LEN:
+        return False
+    return any(phrase in folded for phrase in _CAPABILITY_PHRASES)
+
+
 def classify_intent_rule_based(text: str, entities: list[Entity]) -> tuple[IntentLabel, float]:
     if _is_greeting_shorthand(text):
         return IntentLabel.SMALL_TALK, 0.9
@@ -308,6 +362,12 @@ def classify_intent_rule_based(text: str, entities: list[Entity]) -> tuple[Inten
     best_intent = _resolve_tie(scores)
     best_score = scores[best_intent]
     if best_score <= 0:
+        # Yetenek sorusu kontrolü bilinçli olarak EN SONDA: önce skorlamaya
+        # bakılıyor, yalnızca hiçbir niyet tutmadığında devreye giriyor.
+        # Başta çalışsaydı "kartımı kaybettim ne yapmam lazım" gibi gerçek
+        # bir istek, kısa olduğu için yetenek sorusu sayılabilirdi.
+        if is_capability_question(text):
+            return IntentLabel.SMALL_TALK, 0.8
         return IntentLabel.OUT_OF_SCOPE, _OUT_OF_SCOPE_CONFIDENCE
 
     confidence = min(_CONFIDENCE_CAP, _CONFIDENCE_BASE + _CONFIDENCE_PER_POINT * best_score)

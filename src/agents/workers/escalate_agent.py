@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 
-from agents.memory import is_cancellation
+from agents.memory import is_bare_confirmation, is_cancellation
 from agents.state import GraphState
 from schemas.dto import AgentTraceStep, EntityType, IntentLabel
 
@@ -41,6 +41,21 @@ _OUT_OF_SCOPE_MESSAGE = (
     "işlemleriniz ya da havale/EFT limitleri ve hesap ücretleri gibi banka politikalarımız "
     "hakkında bir sorunuz varsa yardımcı olabilirim, ya da sizi bir müşteri temsilcisine "
     "yönlendirebilirim."
+)
+# Aynı metni arka arkaya duymak, konuşmanın tamamen durduğu izlenimi veriyor:
+# kullanıcı her seferinde aynı 40 kelimelik listeyi okuyor ve ilerlemiyor.
+# İkinci seferde liste tekrarlanmıyor, bunun yerine soru soruluyor —
+# anlamadığını söyleyen bir insanın yapacağı şey de bu.
+_OUT_OF_SCOPE_REPEAT = (
+    "Bunu da anlayamadım. Ne yapmak istediğinizi tek cümleyle yazar mısınız? "
+    "İsterseniz sizi bir müşteri temsilcisine aktarayım."
+)
+# Ortada bir soru yokken gelen çıplak "evet"/"hayır". Kapsam dışı metnini
+# vermek yanlış: kullanıcı bir konu açmıyor, kaybolmuş bir soruyu
+# cevaplıyor.
+_ORPHAN_CONFIRMATION = (
+    "Neyi kastettiğinizi tam çıkaramadım, bekleyen bir işlem görünmüyor. "
+    "Ne yapmak istediğinizi yazabilir misiniz?"
 )
 
 # Beklenen formatta olmayan bir slot-fill cevabı (ör. IBAN yerine "4321")
@@ -114,11 +129,28 @@ def escalate_node(state: GraphState) -> dict[str, object]:
             ],
         }
 
+    if is_bare_confirmation(state["user_query"]):
+        return {
+            "draft_answer": _ORPHAN_CONFIRMATION,
+            "escalation_stage": None,
+            "trace": [
+                AgentTraceStep(node="escalate", summary="bare yes/no with nothing pending")
+            ],
+        }
+
+    repeated = _last_assistant_message(state) == _OUT_OF_SCOPE_MESSAGE
     return {
-        "draft_answer": _OUT_OF_SCOPE_MESSAGE,
+        "draft_answer": _OUT_OF_SCOPE_REPEAT if repeated else _OUT_OF_SCOPE_MESSAGE,
         "escalation_stage": None,
         "trace": [AgentTraceStep(node="escalate", summary=f"out of scope for intent={intent}")],
     }
+
+
+def _last_assistant_message(state: GraphState) -> str:
+    for message in reversed(state.get("history", [])):
+        if message.role != "user":
+            return message.content
+    return ""
 
 
 def _step(message: str, next_stage: str | None, summary: str) -> dict[str, object]:

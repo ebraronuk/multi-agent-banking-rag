@@ -48,6 +48,26 @@ class Settings(BaseSettings):
     chroma_persist_dir: str = "./data/vectorstore"
     chroma_collection: str = "banking_kb"
 
+    # Aşağıdaki iki değer ölçülerek seçildi, tahminle değil — bkz. ADR-015 ve
+    # `python -m evaluation.retrieval`.
+    rag_candidate_pool: int = Field(
+        default=24,
+        ge=1,
+        le=200,
+        description="Vektör aramasının getirdiği aday sayısı. BM25 yalnızca bu "
+        "havuzu yeniden sıralayabiliyor, yani havuz dar olduğunda sözcüksel "
+        "kanal zayıf embedding'in kararına mahkûm kalıyor.",
+    )
+    rag_vector_weight: float = Field(
+        default=0.25,
+        ge=0.0,
+        le=1.0,
+        description="Harmanda vektör skorunun payı; kalanı BM25. Anahtarsız "
+        "demo backend'inde (FakeHashEmbeddings) vektör kanalı ölçülebilir "
+        "biçimde bilgi taşımıyor, o yüzden varsayılan düşük. Gerçek bir "
+        "embedding sağlayıcısına geçildiğinde yeniden ölçülmeli.",
+    )
+
     mcp_server_host: str = "127.0.0.1"
     mcp_server_port: int = 8765
     force_in_process_tools: bool = Field(

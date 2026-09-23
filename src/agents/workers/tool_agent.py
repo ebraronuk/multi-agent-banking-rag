@@ -53,7 +53,7 @@ _MISSING_CARD_MESSAGE = (
 TOOL_ERROR_MESSAGES: dict[str, str] = {
     "CARD_NOT_FOUND": (
         "Bu numarayla biten bir kartınızı bulamadım. Kayıtlı kartlarınız: {cards}. "
-        "Hangisini işleme alayım?"
+        "Hangisini bloke edeyim?"
     ),
     "ACCOUNT_NOT_FOUND": (
         "Bu IBAN'a ait bir hesap bulamadım. Kayıtlı hesabınız: {account}."
@@ -69,13 +69,28 @@ _GENERIC_TOOL_ERROR = (
 )
 
 
-def build_card_prompt(cards: list[dict[str, object]]) -> tuple[str, str | None]:
+# Onay sorusunda geçen fiil. Deterministik yolda kartlara bakan tek araç
+# `block_card` (bkz. `_INTENT_TOOL_MAP`), o yüzden sabit — ama parametre
+# olarak duruyor ki ikinci bir kart aracı eklendiğinde soru sessizce yanlış
+# fiille sorulmasın.
+_CARD_BLOCK_VERB = "bloke edeyim"
+
+
+def build_card_prompt(
+    cards: list[dict[str, object]], *, action: str = _CARD_BLOCK_VERB
+) -> tuple[str, str | None]:
     """Kart sorusunu kimlik kanıtından netleştirmeye çeviren metin.
 
     `(mesaj, önerilen_kart)` döner. Tek kart varsa soru bir evet/hayır
     sorusuna dönüşüyor ve önerilen kart geri veriliyor — kullanıcının
     "onaylıyorum" demesi, rakamı yazmasıyla aynı şey olmalı. Bu ikinci değer
     olmadan sistem, kendi sorduğu evet/hayır sorusunun cevabını anlamıyordu.
+
+    Soru fiili söylemek zorunda. Önceki hâli "7788 ile biten kartınız için
+    onaylıyor musunuz?" diyordu: neyi onayladığını söylemeyen bir evet/hayır
+    sorusu. Geri alınamaz bir işlemde bu sadece kafa karıştırıcı değil,
+    riskli — kullanıcı "kartım çalışmıyor" yazıp "evet" dediğinde çalışan
+    kartını kaybedebiliyordu.
     """
     usable = [c for c in cards if c.get("status") != "blocked"]
     if not usable:
@@ -85,9 +100,9 @@ def build_card_prompt(cards: list[dict[str, object]]) -> tuple[str, str | None]:
         )
     if len(usable) == 1:
         last4 = str(usable[0]["last4"])
-        return f"{last4} ile biten kartınız için onaylıyor musunuz?", last4
+        return f"{last4} ile biten kartınızı {action} mi?", last4
     listed = ", ".join(f"{c['last4']} ile biten" for c in usable)
-    return f"{listed} kartlarınız var. Hangisini işleme alayım?", None
+    return f"{listed} kartlarınız var. Hangisini {action}?", None
 
 
 def humanize_tool_error(code: str, *, cards: str = "", account: str = "") -> str:
