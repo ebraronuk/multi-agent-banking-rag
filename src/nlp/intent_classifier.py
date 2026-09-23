@@ -286,7 +286,21 @@ def _resolve_tie(scores: dict[IntentLabel, int]) -> IntentLabel:
     return non_action[0] if non_action else tied[0]
 
 
+# Kısaltmalar TAM MESAJ olarak eşleşiyor, alt-dize olarak değil: "slm" üç
+# harf ve bir sürü kelimenin içinde geçiyor ("kaslm" gibi bir typo'da bile).
+# Anahtar kelime listesine koymak yanlış-pozitif üretirdi.
+_GREETING_SHORTHAND = frozenset(
+    {"slm", "sa", "mrb", "mrblar", "selamun aleykum", "hey", "hi", "hello", "yo", "eyv"}
+)
+
+
+def _is_greeting_shorthand(text: str) -> bool:
+    return ascii_fold(text).strip(" .,!?") in _GREETING_SHORTHAND
+
+
 def classify_intent_rule_based(text: str, entities: list[Entity]) -> tuple[IntentLabel, float]:
+    if _is_greeting_shorthand(text):
+        return IntentLabel.SMALL_TALK, 0.9
     if has_complaint_tone(text):
         # Yüksek güven: bu bir ton tespiti, kelime eşleşmesi değil.
         return IntentLabel.ESCALATE, 0.9
