@@ -210,3 +210,46 @@ async def test_tesekkure_kendini_yeniden_tanitmiyor(client: AsyncClient) -> None
     answer = str(second["answer"])
     _assert_human_readable(answer, "teşekkür")
     assert "ben DemoBank asistanıyım" not in answer, "kullanıcı zaten tanışmıştı"
+
+
+@pytest.mark.asyncio
+async def test_cevap_kelime_ortasinda_kesilmiyor(client: AsyncClient) -> None:
+    """Ekranda "Mobil uy Kaynak: havale-eft-limitleri.md" gibi yarım kelimeler
+    kalıyordu: alıntı önizlemesi ham `text[:200]` ile kırpılıyor ve doğrudan
+    cevap olarak kullanılıyordu."""
+    body = await _chat(client, "eft limiti")
+    answer = str(body["answer"])
+    _assert_human_readable(answer, "eft limiti")
+    body_text = answer.split("Kaynak:")[0].strip()
+    assert body_text.endswith((".", "!", "?", "…", ":")), (
+        f"cevap kelime ortasında kesilmiş: {body_text[-60:]!r}"
+    )
+    for citation in body["citations"]:
+        snippet = str(citation["snippet"]).strip()
+        assert snippet.endswith((".", "!", "?", "…", ":")), (
+            f"alıntı önizlemesi yarım kelimeyle bitiyor: {snippet[-40:]!r}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_istenmeyen_bankacilik_islemi_onerilmiyor(client: AsyncClient) -> None:
+    """Berabere kalan skorda eylem niyeti kazanmamalı.
+
+    Canlıda: "yeni kart talep etmek istiyorum, bir de bloke edilen karttaki
+    borcum ne olacak" mesajı CARD_ACTION ve ESCALATE'te 1-1 berabere kalıyor,
+    sıralama gereği CARD_ACTION kazanıyor ve asistan kullanıcının hiç
+    istemediği bir kartı bloke etmek için onay istiyordu.
+
+    Maliyetler simetrik değil: gereksiz eskalasyon geri alınabilir, yanlış
+    kart bloke etmek geri alınamaz.
+    """
+    body = await _chat(
+        client,
+        "yeni kart talep etmek istiyorum, bir de bloke edilen karttaki borcum ne olacak",
+    )
+    assert body["intent"] != "CARD_ACTION", (
+        f"istenmeyen kart işlemi önerildi: {body['answer'][:120]!r}"
+    )
+    answer = str(body["answer"])
+    _assert_human_readable(answer, "yeni kart + borç sorusu")
+    assert "onaylıyor musunuz" not in answer, "sorulmayan bir işlem için onay istendi"

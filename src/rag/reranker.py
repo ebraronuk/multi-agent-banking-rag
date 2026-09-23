@@ -16,6 +16,24 @@ from schemas.dto import Citation
 _SNIPPET_LENGTH = 200
 
 
+def _clean_snippet(text: str, limit: int = _SNIPPET_LENGTH) -> str:
+    """Alıntı önizlemesini kelime ortasında kesmeyen kırpma.
+
+    Ham `text[:200]` ekranda "Mobil uy" gibi yarım kelimeler bırakıyordu —
+    kullanıcıya bozuk görünüyor. Önce cümle sonu aranıyor, yoksa son tam
+    kelimede kesilip üç nokta konuyor.
+    """
+    collapsed = " ".join(text.split())
+    if len(collapsed) <= limit:
+        return collapsed
+    window = collapsed[:limit]
+    sentence_end = max(window.rfind(". "), window.rfind("! "), window.rfind("? "))
+    if sentence_end >= limit // 2:
+        return window[: sentence_end + 1]
+    word_end = window.rfind(" ")
+    return (window[:word_end] if word_end > 0 else window).rstrip(" ,;:") + "…"
+
+
 def _min_max_normalize(values: list[float]) -> list[float]:
     if not values:
         return values
@@ -31,7 +49,7 @@ def _to_citation(document: Document, score: float) -> Citation:
         doc_id=str(metadata.get("doc_id", "")),
         title=str(metadata.get("title", "")),
         source=str(metadata.get("source", "")),
-        snippet=document.page_content[:_SNIPPET_LENGTH],
+        snippet=_clean_snippet(document.page_content),
         score=max(0.0, min(1.0, score)),
     )
 
