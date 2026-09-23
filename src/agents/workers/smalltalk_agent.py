@@ -16,6 +16,8 @@ from agents.memory import history_to_messages
 from agents.prompts.smalltalk_prompt import SMALLTALK_SYSTEM_PROMPT
 from agents.state import GraphState
 from app.core.llm import is_fake_model, safe_ainvoke
+from nlp.intent_classifier import is_capability_question
+from nlp.text_utils import ascii_fold
 from schemas.dto import AgentTraceStep
 
 _CANCELLED_MESSAGE = (
@@ -36,24 +38,56 @@ _FALLBACK_GREETING = (
     "Merhaba, ben DemoBank asistanıyım. Bakiye, işlem geçmişi, kart işlemleri "
     "ve banka hizmetleriyle ilgili sorularınızda yardımcı olabilirim."
 )
+# Konuşma zaten başlamışsa kendini yeniden tanıtmak robotik duruyor: aynı
+# tanıtım cümlesini ikinci kez duymak, karşıdakinin konuşmayı hatırlamadığı
+# izlenimi veriyor.
+_RETURNING_GREETING = "Buyurun, nasıl yardımcı olabilirim?"
+
+# "Nasılsın" bir bankacılık sorusu değil ama cevapsız da bırakılamaz.
+# Önceki davranış tam tanıtımı tekrar okuyordu — soruyu duymamış gibi.
+_HOW_ARE_YOU_MESSAGE = "İyiyim, teşekkür ederim. Sizin için ne yapabilirim?"
+_HOW_ARE_YOU_MARKERS = ("nasilsin", "naber", "nasil gidiyor", "how are you", "ne haber")
+
+# Yetenek cevabı gerçek modelde de deterministik. Sebep: bu cümle ürünün
+# kapsamını söylüyor. Bir modelden doğaçlamasını istemek, olmayan bir
+# yeteneği ("para transferi yapabilirim") sayması riskini almak demek —
+# kapsam beyanı, cevabın en az tahmine açık olması gereken yeri.
+_CAPABILITY_MESSAGE = (
+    "Ben DemoBank'ın dijital asistanıyım. Şunlarda yardımcı olabilirim:\n"
+    "- Hesap bakiyenizi söyleyebilirim\n"
+    "- Son işlemlerinizi listeleyebilirim\n"
+    "- Kayıp ya da çalıntı kartınızı bloke edebilirim\n"
+    "- Havale/EFT limitleri, hesap ücretleri gibi banka politikalarını yanıtlayabilirim\n"
+    "Bunların dışında bir konu olursa sizi bir müşteri temsilcisine aktarabilirim."
+)
+
+
+def _is_how_are_you(text: str) -> bool:
+    folded = ascii_fold(text)
+    return len(folded) <= 30 and any(marker in folded for marker in _HOW_ARE_YOU_MARKERS)
 
 
 def build_smalltalk_node(
     llm: BaseChatModel,
 ) -> Callable[[GraphState], Awaitable[dict[str, object]]]:
     async def smalltalk_node(state: GraphState) -> dict[str, object]:
+        history = state.get("history", [])
         if state.get("cancelled_pending"):
             draft_answer = _CANCELLED_MESSAGE
         elif _is_thanks(state["user_query"]):
             draft_answer = _THANKS_MESSAGE
+        elif is_capability_question(state["user_query"]):
+            draft_answer = _CAPABILITY_MESSAGE
+        elif _is_how_are_you(state["user_query"]):
+            draft_answer = _HOW_ARE_YOU_MESSAGE
         elif is_fake_model(llm):
-            draft_answer = _FALLBACK_GREETING
+            draft_answer = _RETURNING_GREETING if history else _FALLBACK_GREETING
         else:
             draft_answer = await safe_ainvoke(
                 llm,
                 [
                     SystemMessage(content=SMALLTALK_SYSTEM_PROMPT),
-                    *history_to_messages(state.get("history", [])),
+                    *history_to_messages(history),
                     HumanMessage(content=state["user_query"]),
                 ],
                 node="smalltalk",
