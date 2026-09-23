@@ -179,6 +179,22 @@ def _format_tool_outcome(record: ToolCallRecord) -> str:
     return f"Araç: {record.tool_name}\nHata: {record.error or 'bilinmeyen hata'}"
 
 
+def _account_label(account_id: object) -> str:
+    """Hesabı kullanıcıya gösterilebilir, maskeli biçimde adlandırır.
+
+    Araç sonucundaki IBAN tam hâliyle geliyor; ekranda tamamını göstermek
+    gereksiz bir PII maruziyeti. Oturumdaki maskeli biçimle eşleşiyorsa o
+    kullanılıyor, yoksa son dört hane.
+    """
+    text = str(account_id or "")
+    if not text:
+        return "Kayıtlı"
+    session = get_session(get_settings())
+    if text == session.account_id:
+        return session.masked_account
+    return f"...{text[-4:]}" if len(text) > 4 else text
+
+
 def _amount(value: object) -> str:
     try:
         return f"{float(str(value)):,.2f}".replace(",", "#").replace(".", ",").replace("#", ".")
@@ -205,9 +221,15 @@ def humanize_tool_result(record: ToolCallRecord) -> str:
             "Yeni kart talebinizi uygulama üzerinden oluşturabilirsiniz."
         )
     if record.tool_name == "get_balance":
+        # Hesap numarası cevaba giriyor. Canlıda kullanıcı üst üste üç kez
+        # "hangi hesabımda" diye sordu ve her seferinde aynı anonim cevabı
+        # aldı: sistem hesabı biliyordu ama söylemiyordu, dolayısıyla soruyu
+        # cevaplayamıyor, sadece aynı aracı tekrar çağırıyordu.
+        # Numara kaynağında maskeli (bkz. session.masked_account) — guardrail
+        # katmanına iş bırakmıyor.
         return (
-            f"Hesabınızda {_amount(data.get('balance'))} "
-            f"{data.get('currency', 'TL')} bulunuyor."
+            f"{_account_label(data.get('account_id'))} hesabınızda "
+            f"{_amount(data.get('balance'))} {data.get('currency', 'TL')} bulunuyor."
         )
     if record.tool_name == "list_transactions":
         rows = data.get("transactions") or []
@@ -219,7 +241,8 @@ def humanize_tool_result(record: ToolCallRecord) -> str:
             if isinstance(r, dict)
         ]
         more = f"\n(Son {len(rows)} işlemin ilk {len(lines)} tanesi.)" if len(rows) > len(lines) else ""
-        return "Son işlemleriniz:\n" + "\n".join(lines) + more
+        header = f"{_account_label(data.get('account_id'))} hesabınızın son işlemleri:"
+        return header + "\n" + "\n".join(lines) + more
     if record.tool_name == "open_support_ticket":
         return (
             f"Talebiniz {data.get('ticket_id')} numarasıyla kaydedildi. "
