@@ -292,3 +292,31 @@ async def test_eskalasyondan_cikilabiliyor(client: AsyncClient) -> None:
     answer = str(second["answer"])
     _assert_human_readable(answer, "eskalasyon iptali")
     assert "doğrulama numarası" not in answer, "iptal doğrulama kodu sanıldı"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("message", ["hesabimda ne kadar var", "hangi hesabımda bulunuyor"])
+async def test_bakiye_cevabi_hangi_hesap_oldugunu_soyluyor(
+    client: AsyncClient, message: str
+) -> None:
+    """Canlıda kullanıcı üst üste üç kez "hangi hesabımda" diye sordu ve her
+    seferinde aynı anonim cevabı aldı: "Hesabınızda 12.450,75 TRY bulunuyor."
+
+    Sistem hesabı biliyordu ama söylemiyordu, dolayısıyla soruyu
+    cevaplayamıyor, sadece aynı aracı tekrar çağırıyordu. Elindeki veriyi
+    kullanmamanın aynı sınıfı: kart tarafında da böyleydi.
+    """
+    body = await _chat(client, message)
+    answer = str(body["answer"])
+    _assert_human_readable(answer, message)
+    assert "TR" in answer, f"hangi hesap olduğu söylenmiyor: {answer!r}"
+    # Tam IBAN ekranda olmamalı — maskeli biçim kullanılıyor.
+    assert "TR330006100519786457841326" not in answer, "tam IBAN sızdı"
+
+
+@pytest.mark.asyncio
+async def test_islem_listesi_de_hesabi_adlandiriyor(client: AsyncClient) -> None:
+    body = await _chat(client, "son işlemlerim")
+    answer = str(body["answer"])
+    _assert_human_readable(answer, "son işlemlerim")
+    assert "TR" in answer, "işlem listesi hangi hesaba ait söylenmiyor"
