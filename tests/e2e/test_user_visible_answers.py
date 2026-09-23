@@ -253,3 +253,42 @@ async def test_istenmeyen_bankacilik_islemi_onerilmiyor(client: AsyncClient) -> 
     answer = str(body["answer"])
     _assert_human_readable(answer, "yeni kart + borç sorusu")
     assert "onaylıyor musunuz" not in answer, "sorulmayan bir işlem için onay istendi"
+
+
+@pytest.mark.asyncio
+async def test_iptal_edip_yeni_istek_yapmak(client: AsyncClient) -> None:
+    """"boşver bakiyeme bakayım": akış kapanmalı AMA ikinci istek kaybolmamalı.
+
+    Tam eşleşme arasaydık bu mesaj hiç iptal sayılmaz, kullanıcı akışta
+    kilitli kalırdı — gerçek kullanıcılar vazgeçerken aynı cümlede yeni bir
+    şey istiyor.
+    """
+    first = await _chat(client, "kartimi kaybettim napcam")
+    second = await _chat(
+        client, "boşver bakiyeme bakayım", conversation_id=str(first["conversation_id"])
+    )
+    assert second["intent"] == "ACCOUNT_ACTION", (
+        f"iptal sonrası ikinci istek kayboldu: {second['answer'][:100]!r}"
+    )
+    _assert_human_readable(str(second["answer"]), "iptal + yeni istek")
+
+
+@pytest.mark.asyncio
+async def test_eskalasyondan_cikilabiliyor(client: AsyncClient) -> None:
+    """ADR-013 script'in çıkış yolu olmamasını bilinçli sayıyordu; canlıda bu
+    bir çıkmaza dönüştü — doğrulama adımındaki kullanıcı akıştan çıkamıyordu.
+
+    BİLİNEN SINIR: eskalasyonda "boşver bakiyem ne kadar" yazılırsa aktarım
+    iptal ediliyor ama ikinci istek kayboluyor (kart akışının aksine).
+    Sebebi ADR-013'ün kasıtlı bir garantisi: `carried_escalation_stage`
+    doluyken supervisor o turun niyetine BAKMADAN escalate_node'a gidiyor ve
+    bu, script'in ortasında yanlış bir worker'a düşme hatasını yapısal olarak
+    imkansız kılıyor. Routing'i koşullu hale getirmek o garantiyi zayıflatır;
+    kullanıcının isteğini tekrar yazması, script'in ortasında para transferi
+    sanılmasından ucuz.
+    """
+    first = await _chat(client, "insanla görüşmek istiyorum")
+    second = await _chat(client, "vazgeçtim", conversation_id=str(first["conversation_id"]))
+    answer = str(second["answer"])
+    _assert_human_readable(answer, "eskalasyon iptali")
+    assert "doğrulama numarası" not in answer, "iptal doğrulama kodu sanıldı"

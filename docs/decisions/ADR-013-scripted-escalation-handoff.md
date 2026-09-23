@@ -53,7 +53,18 @@ olduğu açıkça yazıyor.
   kadar?" sorusuna bile "kaydettim, 24 saat içinde döneceğiz" diyordu. Router artık bu tek
   durumda (`awaiting_issue` + RAG_QUERY) script'i atlayıp cevaplıyor. `verifying`'de bu
   istisna yok — doğrulanmadan hiçbir soru script'i atlayamıyor.
-- ❌ Çıkış yolu yok: "vazgeç" demek mümkün değil, doğrulamaya kadar başka istek
-  sorulamıyor. Gerçek destek akışları da genelde önce doğrulama ister.
+- ✅ (sonradan) Çıkış yolu yoktu ve bu canlıda çıkmaza dönüştü: doğrulama
+  adımındaki kullanıcı "boşver bakiyeme bakayım" yazınca "bunu bir doğrulama
+  numarası olarak tanıyamadım" cevabını alıp akışta kilitli kalıyordu. "Gerçek
+  destek akışları da önce doğrulama ister" gerekçesi yetersizdi — gerçek bir
+  hatta da "vazgeçtim" demek mümkün. `verifying` ve `awaiting_issue`
+  aşamalarında iptal artık kabul ediliyor.
+- ❌ İptal ederken aynı cümlede yeni bir istek varsa ("boşver bakiyem ne
+  kadar") aktarım kapanıyor ama ikinci istek kayboluyor — kart akışının
+  aksine. Sebebi bu ADR'nin kendi garantisi: `carried_escalation_stage`
+  doluyken router o turun niyetine bakmıyor ve bu, script'in ortasında yanlış
+  worker'a düşme hatasını (#2) yapısal olarak imkansız kılıyor. Routing'i
+  koşullu yapmak o garantiyi zayıflatır; kullanıcının isteğini tekrar
+  yazması, script'in ortasında para transferi sanılmasından ucuz.
 - ❌ Doğrulama gerçek değil, herhangi bir 4 hane kabul ediliyor. Bu bir UX akışı demosu.
 - ❌ `resolved` tek turluk; aynı soru üst üste iki kez sorulursa ikincisi script dışında.

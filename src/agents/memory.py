@@ -191,16 +191,35 @@ NEGATIVE_ANSWERS = frozenset(
 )
 
 
-def is_cancellation(text: str) -> bool:
-    """Kullanıcı bekleyen isteği iptal mi ediyor?
+def split_cancellation(text: str) -> tuple[bool, str]:
+    """`(iptal_mi, kalan_metin)`.
 
-    Kısa mesaj şartı, onay tarafındakiyle aynı gerekçeyle: uzun bir cümlede
-    geçen "yok" kelimesi bir iptal değil.
+    İki ayrı kalıbı ayırıyor:
+
+    * `"boşver"` — sadece iptal. Kalan boş.
+    * `"boşver bakiyeme bakayım"` — iptal + yeni istek. Bekleyen akış
+      kapanıyor ama kullanıcının ikinci cümlesi kaybolmuyor; normal
+      sınıflandırmaya gidiyor. Tam eşleşme arasaydık bu mesaj hiç iptal
+      sayılmaz, kullanıcı akışta kilitli kalırdı.
+
+    Kısa mesaj ve baştan eşleşme şartı bilinçli: uzun bir cümlenin ortasında
+    geçen "yok" bir iptal değil, ve geniş bir eşleşme kullanıcının yeni bir
+    isteğini sessizce iptal sayabilirdi.
     """
-    stripped = text.strip()
-    if len(stripped) > 25:
-        return False
-    return turkish_lower(stripped).strip(" .,!?") in NEGATIVE_ANSWERS
+    normalized = turkish_lower(text.strip()).strip(" .,!?")
+    if not normalized or len(normalized) > 60:
+        return False, text
+    if normalized in NEGATIVE_ANSWERS:
+        return True, ""
+    for marker in sorted(NEGATIVE_ANSWERS, key=len, reverse=True):
+        if normalized.startswith(marker + " "):
+            return True, text.strip()[len(marker) :].strip(" ,.")
+    return False, text
+
+
+def is_cancellation(text: str) -> bool:
+    """Mesaj tamamen ya da baştan bir iptal mi?"""
+    return split_cancellation(text)[0]
 
 
 _AFFIRMATIVE_ANSWERS = frozenset(

@@ -12,10 +12,11 @@ from collections.abc import Awaitable, Callable
 
 from langchain_core.language_models.chat_models import BaseChatModel
 
-from agents.memory import is_cancellation
+from agents.memory import split_cancellation
 from agents.state import GraphState
 from agents.supervisor import TOOL_DRIVEN_INTENTS
 from nlp.intent_classifier import classify_intent
+from nlp.ner_extractor import extract_entities
 from schemas.dto import AgentTraceStep, IntentLabel
 
 # Zincirlenebilir niyetler (ADR-012). ESCALATE/OUT_OF_SCOPE dahil değil —
@@ -46,7 +47,28 @@ def build_intent_node(llm: BaseChatModel) -> Callable[[GraphState], Awaitable[di
         # Bu olmadan "hayır" ya da "boşver" cevabı kart numarası sanılıyor ve
         # kullanıcı başlattığı akışta kilitli kalıyordu: her mesajına
         # "bu bir kart numarası gibi görünmüyor" cevabı geliyordu.
-        if pending and is_cancellation(state["user_query"]):
+        cancelled, remainder = split_cancellation(state["user_query"])
+        if pending and cancelled and remainder:
+            # "boşver bakiyeme bakayım": akış kapanıyor ama ikinci istek
+            # kaybolmuyor — kalan metin normal sınıflandırmaya gidiyor.
+            intent, confidence, _extra = await classify_intent(
+                remainder, extract_entities(remainder), llm
+            )
+            return {
+                "intent": intent,
+                "intent_confidence": confidence,
+                "extra_intents": [],
+                "pending_entity_request": None,
+                "user_query": remainder,
+                "trace": [
+                    AgentTraceStep(
+                        node="intent_agent",
+                        summary=f"cancelled pending {pending.intent}, continued as {intent}",
+                    )
+                ],
+            }
+
+        if pending and cancelled:
             return {
                 "intent": IntentLabel.SMALL_TALK,
                 "intent_confidence": 1.0,

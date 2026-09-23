@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 
+from agents.memory import is_cancellation
 from agents.state import GraphState
 from schemas.dto import AgentTraceStep, EntityType, IntentLabel
 
@@ -57,6 +58,9 @@ _PENDING_RETRY_MESSAGES: dict[EntityType, str] = {
 
 # Gerçek bir doğrulama değil, sadece "4 haneli bir şey yazdı mı" kontrolü —
 # demo modunda herhangi bir 4 haneli numara kabul ediliyor (arayüzde belirtiliyor).
+_CANCELLED = (
+    "Tamam, aktarımı iptal ettim. Başka bir konuda yardımcı olabilir miyim?"
+)
 _VERIFICATION_CODE_RE = re.compile(r"(?<!\d)\d{4}(?!\d)")
 _TIMING_FOLLOW_UP_RE = re.compile(r"ne zaman|kaç (gün|saat)|ne kadar sürer|süre", re.IGNORECASE)
 
@@ -64,6 +68,15 @@ _TIMING_FOLLOW_UP_RE = re.compile(r"ne zaman|kaç (gün|saat)|ne kadar sürer|s�
 def escalate_node(state: GraphState) -> dict[str, object]:
     intent = state.get("intent")
     stage = state.get("carried_escalation_stage")
+
+    # ADR-013 script'in çıkış yolu olmamasını bilinçli bir basitleştirme
+    # sayıyordu. Canlıda bu bir çıkmaza dönüştü: doğrulama adımındaki
+    # kullanıcı "boşver bakiyeme bakayım" yazınca "bunu bir doğrulama
+    # numarası olarak tanıyamadım" cevabını alıyor, akıştan çıkamıyordu.
+    # Kart slot-fill'inde aynı hatayı düzelttik; burada bırakmak tutarsız.
+    # Gerçek bir destek hattında da "vazgeçtim" demek mümkündür.
+    if stage in {"verifying", "awaiting_issue"} and is_cancellation(state["user_query"]):
+        return _step(_CANCELLED, None, "user cancelled the handoff")
 
     if stage == "verifying":
         if _VERIFICATION_CODE_RE.search(state["user_query"]):
