@@ -263,12 +263,35 @@ def has_complaint_tone(text: str) -> bool:
     return any(ascii_fold(marker) in folded for marker in _COMPLAINT_MARKERS)
 
 
+# Gerçek bir bankacılık işlemi tetikleyen niyetler. Berabere kalan bir skorda
+# bunlar KAYBEDİYOR: "yeni kart talep etmek istiyorum, bir de bloke edilen
+# karttaki borcum ne olacak" mesajı CARD_ACTION ve ESCALATE'te 1-1 berabere
+# kalıyor, sıralama gereği CARD_ACTION kazanıyor ve sistem kullanıcının hiç
+# istemediği bir kartı bloke etmeye hazırlanıyordu.
+#
+# Maliyetler simetrik değil: gereksiz yere insana aktarmak geri alınabilir,
+# yanlış kart bloke etmek geri alınamaz. Eşitlikte eylem kaybetmeli.
+_ACTION_INTENTS: frozenset[IntentLabel] = frozenset(
+    {IntentLabel.CARD_ACTION, IntentLabel.ACCOUNT_ACTION, IntentLabel.TRANSACTION_ACTION}
+)
+
+
+def _resolve_tie(scores: dict[IntentLabel, int]) -> IntentLabel:
+    """En yüksek skoru paylaşanlar arasından eylem olmayanı seçer."""
+    best_score = max(scores.values())
+    tied = [intent for intent, score in scores.items() if score == best_score]
+    if len(tied) == 1:
+        return tied[0]
+    non_action = [intent for intent in tied if intent not in _ACTION_INTENTS]
+    return non_action[0] if non_action else tied[0]
+
+
 def classify_intent_rule_based(text: str, entities: list[Entity]) -> tuple[IntentLabel, float]:
     if has_complaint_tone(text):
         # Yüksek güven: bu bir ton tespiti, kelime eşleşmesi değil.
         return IntentLabel.ESCALATE, 0.9
     scores = _score_intents(text, entities)
-    best_intent = max(scores, key=lambda intent: scores[intent])
+    best_intent = _resolve_tie(scores)
     best_score = scores[best_intent]
     if best_score <= 0:
         return IntentLabel.OUT_OF_SCOPE, _OUT_OF_SCOPE_CONFIDENCE

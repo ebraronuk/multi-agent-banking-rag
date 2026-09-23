@@ -45,7 +45,14 @@ def _citation_answer(citations: list[Citation]) -> str:
             "temsilcisine aktarabilirim."
         )
     top = citations[0]
-    return f"{top.snippet.strip()}\n\nKaynak: {top.source}"
+    # Snippet bir önizleme; üç noktayla bitiyorsa cevabın sonunda yarım
+    # kalmış gibi durmasın diye tam cümlede kesiliyor.
+    body = top.snippet.strip()
+    if body.endswith("…"):
+        cut = max(body.rfind(". "), body.rfind("! "), body.rfind("? "))
+        if cut > 40:
+            body = body[: cut + 1]
+    return f"{body}\n\nKaynak: {top.source}"
 
 
 def build_rag_node(
