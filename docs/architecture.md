@@ -112,12 +112,12 @@ süreç ayağa kaldırmadan hızlı, deterministik testler için. `DATABASE_URL`
 
 - API süreci kendisi stateless — turlar arası durum (konuşma geçmişi, bekleyen
   slot-doldurma isteği) `memory_load`/`memory_save` üzerinden Redis'te tutuluyor (bkz.
-  ADR-008), API süreçlerinin belleğinde değil. Bu sayede `k8s/deployment.yaml` +
-  `k8s/hpa.yaml` yatay ölçeklemeyi sorunsuz destekliyor — hangi replikanın isteği
+  ADR-008), API süreçlerinin belleğinde değil. Bu sayede API yatay olarak
+  çoğaltılabilir — hangi replikanın isteği
   aldığı önemli değil, hepsi aynı Redis'i paylaşıyor. `REDIS_URL` boşsa (yerel
   geliştirme/testler) her replika kendi in-memory dict'ine düşer — o zaman konuşma
   sürekliliği yalnızca tek bir process içinde garanti.
-- Vektör deposu (Chroma) tek bir `PersistentVolumeClaim` üzerinden paylaşılıyor — birden
+- Vektör deposu (Chroma) paylaşılan tek bir birim üzerinden okunuyor — birden
   fazla replika aynı salt-okunur bilgi tabanını okuyor. Yazma (ingest) `scripts/seed_vectorstore.py`
   ile ayrı, çevrimdışı bir adım; API süreçleri runtime'da vektör deposuna yazmıyor.
 - Bankacılık verisi (Postgres) tüm replikalar arasında paylaşılan tek bir kaynak —

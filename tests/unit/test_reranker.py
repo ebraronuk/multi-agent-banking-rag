@@ -80,3 +80,76 @@ def test_rerank_snippet_is_truncated_to_200_chars() -> None:
     citations = rerank_with_bm25("kart engelleme", [(document, 0.9)], top_k=4)
 
     assert len(citations[0].snippet) <= 200
+
+
+class TestTurkishStemming:
+    """Türkçe çekim ekleri sözcüksel eşleşmeyi bozuyordu.
+
+    Boşlukla bölen bir BM25 için "şifremi" ile "şifre" iki ayrı terim. Gerçek
+    kullanıcı çekimli yazıyor, doküman kök hâlini kullanıyor, ve doğru doküman
+    hiç eşleşmiyordu.
+    """
+
+    def test_cekimli_sorgu_kok_halini_buluyor(self) -> None:
+        candidates = [
+            (_doc("sifre", "Şifre güvenliği için parolanızı düzenli değiştirin."), 0.1),
+            (_doc("ucret", "Hesap işletim ücreti aylık 25 TL olarak uygulanır."), 0.1),
+        ]
+        top = rerank_with_bm25("şifremi nasıl değiştiririm", candidates, top_k=1)
+        assert top[0].doc_id == "sifre"
+
+    def test_turkce_karaktersiz_sorgu_da_eslesiyor(self) -> None:
+        """Kullanıcıların bir kısmı Türkçe karakter kullanmıyor."""
+        candidates = [
+            (_doc("sikayet", "İtiraz ve şikayet süreci 15 iş günü içinde sonuçlanır."), 0.1),
+            (_doc("saat", "Şubeler hafta içi 09:00-17:00 arasında açıktır."), 0.1),
+        ]
+        top = rerank_with_bm25("sikayetimi nereye iletebilirim", candidates, top_k=1)
+        assert top[0].doc_id == "sikayet"
+
+
+class TestVectorWeight:
+    """Harman ağırlığı ölçülerek seçilen bir değer, sabit değil (ADR-015)."""
+
+    # BM25'in IDF'i küçük korpusta dejenere: iki adayda tüm skorlar sıfır
+    # çıkıyor (rank_bm25, N=2 ve freq=1 için idf=0 veriyor), yani sözcüksel
+    # kanal tamamen susuyor. Üretimde aday havuzu 24; buradaki dolgu
+    # dokümanlar o koşulu taklit ediyor, testin kendisi için değil.
+    _DOLGU = (
+        "Şubeler hafta içi 09:00-17:00 arasında açıktır.",
+        "Kart engelleme işlemi ücretsizdir.",
+        "KVKK kapsamında verilerinizin silinmesini talep edebilirsiniz.",
+        "Şifrenizi düzenli aralıklarla değiştirin.",
+        "Hesap işletim ücreti aylık 25 TL olarak uygulanır.",
+    )
+
+    def _candidates(self, ilgili_skor: float, dolgu_skor: float) -> list[tuple[Document, float]]:
+        pairs = [
+            (_doc("ilgili", "Havale EFT limiti günlük 50.000 TL olarak uygulanır."), ilgili_skor)
+        ]
+        pairs += [(_doc(f"dolgu{i}", text), dolgu_skor) for i, text in enumerate(self._DOLGU)]
+        return pairs
+
+    def test_agirlik_sifirken_vektor_siralamayi_belirlemiyor(self) -> None:
+        """Vektör kanalı bilgi taşımadığında kapatılabilmeli."""
+        top = rerank_with_bm25(
+            "eft limiti nedir", self._candidates(0.01, 0.99), top_k=1, vector_weight=0.0
+        )
+        assert top[0].doc_id == "ilgili"
+
+    def test_agirlik_birken_yalnizca_vektor_belirliyor(self) -> None:
+        top = rerank_with_bm25(
+            "eft limiti nedir", self._candidates(0.01, 0.99), top_k=1, vector_weight=1.0
+        )
+        assert top[0].doc_id.startswith("dolgu")
+
+    def test_negatif_skorlu_aday_elenmiyor(self) -> None:
+        """Aday havuzu genişledikçe kuyrukta negatif cosine skorları çıkıyor.
+
+        Bunları atmak, sözcüksel kanalın bulduğu bir dokümanı zayıf embedding
+        yüzünden kaybetmek demek — düzeltilen hatanın ta kendisi.
+        """
+        top = rerank_with_bm25(
+            "eft limiti nedir", self._candidates(-0.06, 0.4), top_k=2, vector_weight=0.25
+        )
+        assert top[0].doc_id == "ilgili"

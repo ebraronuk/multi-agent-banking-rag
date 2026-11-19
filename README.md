@@ -40,7 +40,7 @@ canlı doğrulanmış, gerçek bug'lar — gömülü değil, burada:
   1'e kadar düşüyordu) — anahtar kelime kapsamı genişletilip ölçüldü.
 - **Kendi eval setim yalan söylüyordu**: ilk set tam cümlelerden oluşuyordu ("Bakiyem ne
   kadar acaba?") ve sistem orada **%100** alıyordu. Kimse bir chatbot'a öyle yazmıyor.
-  Gerçek kullanıcı dilinden 35 vakalık bir set kurdum — küçük harf, noktalama yok, Türkçe
+  Gerçek kullanıcı dilinden 39 vakalık bir set kurdum — küçük harf, noktalama yok, Türkçe
   karakter yok, yazım hatası, tek kelimelik istek, kızgın kullanıcı. Aynı sistem orada
   **%57.1** aldı. İki kök sebep çıktı: (1) Türkçe karakter kullanmayan kullanıcı
   ("musteri", "hesabimda") hiçbir anahtar kelimeyi tutturamıyordu — `ascii_fold()`
@@ -143,7 +143,7 @@ Detaylı diyagram, süreç sınırları ve ölçeklenebilirlik notları için �
 |---|---|---|
 | Orkestrasyon | LangGraph | Koşullu dallanma + döngü + paylaşılan durumu birinci sınıf destekler ([ADR-001](docs/decisions/ADR-001-langgraph-orchestration.md)) |
 | Rota kararı | Deterministik Python, LLM değil | Test edilebilirlik + gecikme/maliyet ([ADR-002](docs/decisions/ADR-002-supervisor-routing.md)) |
-| LLM/embedding | Anthropic veya OpenAI, **anahtar yoksa deterministik fake'e düşer** | `docker compose up` sıfır konfigürasyonla çalışsın ([ADR-003](docs/decisions/ADR-003-offline-first-fake-providers.md)) |
+| LLM/embedding | Anthropic veya OpenAI, **anahtar yoksa deterministik fake'e düşer** | `docker compose up` sıfır konfigürasyonla çalışsın. Fake sağlayıcı **kabloları** sınamak için var (graf, araç döngüsü, retrieval, eval harness); cevap kalitesi için değil, bir stub iyi Türkçe bankacılık cevabı üretmez ([ADR-003](docs/decisions/ADR-003-offline-first-fake-providers.md)) |
 | Retrieval | Chroma (vektör) + BM25 rerank | Türkçe finansal terimlerde tam-eşleşme + anlamsal yakınlığı birleştirir ([ADR-004](docs/decisions/ADR-004-hybrid-retrieval.md)) |
 | Araç çağırma | FastMCP (ayrı süreç) + in-process fallback | Gerçek bir MCP sınırı göstermek + testlerde ağ bağımlılığından kaçınmak ([ADR-005](docs/decisions/ADR-005-mcp-tool-boundary.md)) |
 | Güvenlik | Kural tabanlı guardrail (PII redaksiyonu, yatırım tavsiyesi engelleme, prompt injection tespiti, model kimliği sızıntısı engelleme), LLM değil | Guardrail'in kendisi jailbreak edilebilir bir modele bağımlı olmamalı ([ADR-006](docs/decisions/ADR-006-guardrail-not-an-llm-call.md)) |
@@ -153,20 +153,6 @@ Detaylı diyagram, süreç sınırları ve ölçeklenebilirlik notları için �
 | Çoklu-niyet dispatch | Tek mesajda birden fazla farklı niyet varsa sırayla işlenir, sonuçlar tek cevapta birleştirilir — fake modda da (kural tabanlı, daha kaba) bir tespit yolu var | Tek-etiketli sınıflandırmanın bileşik istekleri kaybetmesini önlemek, tek-niyetli turlarda sıfır ek maliyetle ([ADR-012](docs/decisions/ADR-012-multi-intent-dispatch.md)) |
 | Bankacılık verisi | Postgres (`accounts`/`cards`/`transactions`) + in-memory fallback | Gerçek parametreli SQL, ama `DATABASE_URL` yoksa CI/lokal geliştirme yine sıfır altyapıyla çalışsın ([ADR-010](docs/decisions/ADR-010-postgres-banking-data.md)) |
 | Varlık çıkarımı (NER) | Regex taban + gerçek modda ek bir LLM geçişi | Regex'in kör olduğu serbest metin (kişi adı vb.) için recall, kesin alanlarda regex'in hızı/kesinliği korunuyor ([ADR-011](docs/decisions/ADR-011-hybrid-ner.md)) |
-
-## Üretime dönük detaylar (demo kapsamında ama gerçek)
-
-- **Dayanıklılık:** `rag_agent`/`smalltalk_agent`/`tool_agent`'ın LLM çağrıları `app/core/llm.py::safe_ainvoke`
-  ile sarmalı — gerçek bir sağlayıcı kesintisi `/chat`'i 500'e düşürmek yerine
-  guardrail'in mevcut "yanıt üretemedim" yoluna zarifçe düşer (bkz. ADR-007).
-- **Rate limiting:** `/chat` `slowapi` ile IP başına `20/dakika` sınırlı — her
-  LLM çağrısı gerçek para/gecikme maliyeti taşıdığı için, kaçak bir istemci
-  döngüsü bunu sınırsız tüketemez. Aşıldığında `429` + `RATE_LIMITED` döner.
-- **Gözlemlenebilirlik:** Her yanıt bir `X-Request-Id` header'ı taşır (istemci
-  verirse aynen yansıtılır); `GET /metrics` Prometheus formatında istek
-  sayısı/gecikme histogramı sunar (`prometheus-fastapi-instrumentator`).
-- **Doğrulama hataları** FastAPI'nin varsayılan 422 şeması yerine bu API'nin
-  kendi `ErrorResponse` sözleşmesiyle (`code`, `message`, `details`) döner.
 
 ## Hızlı başlangıç
 
@@ -204,37 +190,30 @@ curl -X POST http://localhost:8000/chat \
   -d '{"message": "EFT limitiniz ne kadar?"}'
 ```
 
-Örnek yanıt (kısaltılmış — `LLM_PROVIDER=google` ile canlı yakalandı, `.env`'de anahtar
-yoksa `answer` yerine deterministik bir sahte metin gelir, geri kalan şekil aynı kalır):
+Örnek yanıt, kısaltılmış. `trace` alanı bilerek tam gösterildi: çoklu ajan
+sistemlerinde "neden bu yanıt verildi" sorusu debug'ın merkezinde, o yüzden
+izlenebilirlik sona eklenen bir özellik değil, API sözleşmesinin parçası.
 
 ```json
 {
-  "conversation_id": "f4ac8fef-bc7b-46eb-8ded-04f62aadbefb",
-  "answer": "Bireysel müşteriler için varsayılan günlük toplam transfer limiti 50.000 TL'dir ve bu limit; havale, EFT ve FAST işlemlerinin toplamını kapsar. Tekil bir EFT işlemi için üst sınır ise 20.000 TL'dir.",
+  "answer": "Bireysel müşteriler için varsayılan günlük toplam transfer limiti 50.000 TL'dir...",
   "intent": "RAG_QUERY",
-  "entities": [],
   "citations": [
-    { "doc_id": "havale-eft-limitleri.md-1", "title": "Havale/EFT Limitleri", "score": 0.86, "snippet": "Bireysel müşteriler için varsayılan günlük toplam transfer limiti 50.000 TL'dir..." },
-    { "doc_id": "havale-eft-limitleri.md-3", "title": "Havale/EFT Limitleri", "score": 0.87, "snippet": "FAST sistemi üzerinden yapılan transferlerde işlem saniyeler içinde gerçekleşir..." }
+    { "doc_id": "havale-eft-limitleri.md-1", "title": "Havale/EFT Limitleri", "score": 0.86, "snippet": "..." }
   ],
-  "tool_calls": [],
   "trace": [
-    { "node": "memory_load", "summary": "loaded 0 prior turn(s)" },
-    { "node": "ner_agent", "summary": "extracted 0 entity(ies)" },
+    { "node": "ner_agent",    "summary": "extracted 0 entity(ies)" },
     { "node": "intent_agent", "summary": "classified as RAG_QUERY (confidence=0.90)" },
-    { "node": "supervisor", "summary": "routing decision for intent=RAG_QUERY" },
-    { "node": "rag_agent", "summary": "answered using 4 citation(s)" },
-    { "node": "supervisor", "summary": "routing decision for intent=RAG_QUERY" },
-    { "node": "guardrail", "summary": "guardrail resolved response (0 flag(s))" },
-    { "node": "memory_save", "summary": "turn persisted" }
+    { "node": "supervisor",   "summary": "routing decision for intent=RAG_QUERY" },
+    { "node": "rag_agent",    "summary": "answered using 4 citation(s)" },
+    { "node": "guardrail",    "summary": "guardrail resolved response (0 flag(s))" },
+    { "node": "memory_save",  "summary": "turn persisted" }
   ],
-  "guardrail_flags": [],
-  "iterations": 0
+  "guardrail_flags": []
 }
 ```
 
-`trace` alanı burada bilerek tam gösterildi — bu API'nin ayırt edici tarafı budur (bkz.
-"API sözleşmesi" altında).
+Anahtar yoksa `answer` yerine deterministik bir sahte metin gelir, geri kalan şekil aynıdır.
 
 ### Yerel geliştirme (Docker olmadan)
 
@@ -266,17 +245,24 @@ testiyle kapsanıyor.
 
 ## Değerlendirme (evaluation)
 
+Kalite iddiası ölçülebilir olmalı. Üç ayrı ölçüm yüzeyi var, farklı işler yapıyorlar:
+
+| Ne | Nerede | Boyut |
+|---|---|---|
+| **Etiketli retrieval seti + parametre taraması** | `src/evaluation/retrieval.py`, `data/eval/retrieval_queries.json` | **36 sorgu**, kategoriye bölünmüş; `sweep()` ile `k_vector`/`vector_weight` ölçerek seçiliyor ([ADR-015](docs/decisions/ADR-015-retrieval-ayarlarini-olcerek-secmek.md)) |
+| **Gerçek kullanıcı dili korpusu** | `src/evaluation/real_utterances.py`, `data/eval/real_user_utterances.json` | **39 vaka**, zorluk kategorili: küçük harf, Türkçe karakter yok, yazım hatası, tek kelime, kızgın ton |
+| **Hızlı duman testi** | `make eval` → `src/evaluation/eval_harness.py` | 8 niyet + 6 retrieval, kod içinde sabit; CI'da hızlı çalışsın diye küçük tutuldu |
+
 ```bash
-make eval   # niyet doğruluğu + retrieval precision@1
+make eval                           # hızlı duman testi
+python -m evaluation.retrieval      # 36 sorguluk set + parametre taraması
 ```
 
-`src/evaluation/eval_harness.py`, küçük ve dürüst bir ölçüm — RAGAS değil, elle
-etiketlenmiş 8 (niyet) + 6 (retrieval) örneklik bir set. Amaç mükemmel bir sayı
-göstermek değil, "kalite iddiası ölçülebilir olmalı" fikrinin çalışan bir örneğini
-vermek: niyet sınıflandırması bu sette %100, retrieval ise `EMBEDDING_PROVIDER=fake`
-modunda (API anahtarı yokken) precision@1 ~%50 — bu sınırın nedeni ve gerçek bir
-embedding anahtarıyla neden kalkacağı [ADR-004](docs/decisions/ADR-004-hybrid-retrieval.md)'te
-ölçülmüş bulgu olarak yazılı.
+Bu setlerin ne bulduğu yukarıdaki "Bu projeyi nasıl denetledim" bölümünde: ilk eval setim
+tam cümlelerden oluştuğu için **%100** veriyordu, gerçek kullanıcı dilinde aynı sistem
+**%57,1** aldı, iki kök sebep düzeltilince **%80,0** oldu.
+
+RAGAS gibi bir çerçeve kullanılmadı; setler elle etiketlendi.
 
 ## API sözleşmesi
 
@@ -297,8 +283,14 @@ merkezinde, bu yüzden izlenebilirlik sona eklenen bir özellik değil.
   ama bu demo'da varsayılan kapalı.
 - Kimlik doğrulama/oturum yok — `/chat` şu an herkese açık; gerçek dağıtım bir
   auth middleware'i gerektirir.
-- Değerlendirme seti küçük ve elle etiketlenmiş, RAGAS gibi bir çerçeve değil —
-  bkz. "Değerlendirme" bölümü.
+- Değerlendirme seti elle etiketlenmiş, RAGAS gibi bir çerçeve değil — bkz.
+  "Değerlendirme" bölümü.
+- **Bilgi tabanı, hibrit retrieval'ın vektör yarısını sınamak için küçük.** 8 doküman
+  68 parçaya bölünüyor; `k_vector=24` ile vektör aşaması her sorguda korpusun yaklaşık
+  üçte birini döndürüyor, yani ayırt etme işini fiilen BM25 yapıyor. Bu, ADR-004'teki
+  hibrit kurgunun yanlış olduğunu göstermiyor; bu korpus boyutunda **sınanmadığını**
+  gösteriyor. Ölçerek seçilen `vector_weight=0.25` değeri de bu sete özel bir yerel
+  optimum olarak okunmalı. Korpusu büyütüp taramayı yeniden koşmak sıradaki iş.
 - Postgres şeması elle yazılan tek bir `db/schema.sql` — bir migration aracı (Alembic vb.)
   bu demo'nun kapsamı dışında bırakıldı (bkz. ADR-010).
 - LLM tabanlı NER geçişi karakter offset'i vermiyor (`start`/`end` boş kalıyor) —
@@ -307,18 +299,8 @@ merkezinde, bu yüzden izlenebilirlik sona eklenen bir özellik değil.
   ACCOUNT_ACTION...) hâlâ kullanıcının tam mesajını görüyor — bunlar entity-grounded
   çalıştığı için sorun yaratmıyor, ama izole alt-sorgu şu an sadece RAG_QUERY için var.
 
-## Kubernetes
-
-`k8s/` altında referans amaçlı manifestler var: `deployment.yaml` (2 replika,
-readiness/liveness probe), `service.yaml`, `hpa.yaml` (CPU/memory bazlı
-autoscale), `configmap.yaml`. Bu demo'nun asıl çalıştırma yolu `docker compose`
-(yukarıya bakın); k8s manifestleri gerçek bir clusterda nasıl dağıtılacağının
-somut bir örneği olarak duruyor, CI'da apply edilmiyor.
-
 ## Lisans ve proje sağlığı
 
 MIT — bkz. [`LICENSE`](LICENSE). `.pre-commit-config.yaml` (ruff, `make hooks` ile
 kurulur) ve `.github/dependabot.yml` (pip/docker/actions, haftalık) ile bağımlılık
 ve stil kontrolü otomatik.
-
-Ekip için devir notları: [`HANDOFF.md`](HANDOFF.md).

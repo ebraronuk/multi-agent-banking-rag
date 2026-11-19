@@ -10,10 +10,34 @@ from __future__ import annotations
 from langchain_core.documents import Document
 from rank_bm25 import BM25Okapi
 
-from nlp.text_utils import turkish_lower
+from nlp.text_utils import ascii_fold
 from schemas.dto import Citation
 
 _SNIPPET_LENGTH = 200
+
+# Türkçe sondan eklemeli: "şifre" -> "şifremi", "şikayet" -> "şikayetimi",
+# "bloke" -> "bloke ederim". Boşlukla bölen bir BM25 bu çekimleri farklı
+# terim sayıyor ve doğru doküman hiç eşleşmiyordu.
+#
+# Tam bir Türkçe stemmer yerine sabit uzunlukta önek kesme: kök çoğunlukla
+# ilk 5 harfte bitiyor ve ek sonra geliyor. Kaba, ama bağımlılık eklemiyor ve
+# ölçüldü (bkz. ADR-015): 5 en iyi, 4 ve 6 daha kötü. Aradaki fark iki setin
+# birinde birkaç sorgu, yani bu değer "en iyi" değil "ölçülmüş makul" —
+# sağlayıcı ya da korpus değişirse yeniden ölçülmeli.
+_STEM_LENGTH = 5
+
+# Harmanın varsayılan vektör payı. `Settings.rag_vector_weight` bunu eziyor;
+# burada duruyor ki reranker LangGraph ya da ayar nesnesi kurmadan da
+# çağrılabilsin.
+_DEFAULT_VECTOR_WEIGHT = 0.25
+
+
+def tokenize(text: str) -> list[str]:
+    """BM25 için sözcük listesi: ASCII'ye indirgenmiş, önekten kesilmiş."""
+    return [
+        word[:_STEM_LENGTH] if len(word) > _STEM_LENGTH else word
+        for word in ascii_fold(text).split()
+    ]
 
 
 def _clean_snippet(text: str, limit: int = _SNIPPET_LENGTH) -> str:
@@ -63,11 +87,16 @@ def rerank_with_bm25(
     query: str,
     candidates: list[tuple[Document, float]],
     top_k: int = 4,
+    vector_weight: float = _DEFAULT_VECTOR_WEIGHT,
 ) -> list[Citation]:
     if not candidates:
         return []
 
-    # BM25'in IDF'i tek dokümanda tanımsız/dejenere — vektör skoruna aynen düş.
+    # BM25'in IDF'i küçük korpusta dejenere: tek adayda tanımsız, iki adayda
+    # tüm terimler idf=0 alıyor ve sözcüksel kanal tamamen susuyor. İkinci
+    # durumda `_min_max_normalize` eşit skorları 1.0'a çevirdiği için sıralama
+    # zaten vektöre düşüyor, yani davranış doğru — ama sessiz. Aday havuzunun
+    # neden dar tutulmaması gerektiğinin bir sebebi daha (bkz. ADR-015).
     if len(candidates) == 1:
         document, vector_score = candidates[0]
         return [_to_citation(document, vector_score)]
@@ -75,14 +104,15 @@ def rerank_with_bm25(
     documents = [document for document, _ in candidates]
     vector_scores = [score for _, score in candidates]
 
-    tokenized_corpus = [turkish_lower(document.page_content).split() for document in documents]
+    tokenized_corpus = [tokenize(document.page_content) for document in documents]
     bm25 = BM25Okapi(tokenized_corpus)
-    bm25_scores = list(bm25.get_scores(turkish_lower(query).split()))
+    bm25_scores = list(bm25.get_scores(tokenize(query)))
 
     normalized_vector = _min_max_normalize(vector_scores)
     normalized_bm25 = _min_max_normalize(bm25_scores)
+    lexical_weight = 1.0 - vector_weight
     combined_scores = [
-        0.5 * vector + 0.5 * bm25_score
+        vector_weight * vector + lexical_weight * bm25_score
         for vector, bm25_score in zip(normalized_vector, normalized_bm25, strict=True)
     ]
 
