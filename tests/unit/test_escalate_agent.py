@@ -1,18 +1,38 @@
 from __future__ import annotations
 
 from agents.state import new_state
+from agents.tools.mcp_client import InProcessToolClient
 from agents.workers.escalate_agent import escalate_node
-from schemas.dto import EntityType, IntentLabel, PendingEntityRequest
+from mcp_server.tools.banking_repository import InMemoryBankingRepository
+from schemas.dto import EntityType, IntentLabel, PendingEntityRequest, ToolCallRecord
 
 
-def test_escalate_intent_combines_handoff_greeting_and_verification_request() -> None:
+def _tool_client() -> InProcessToolClient:
+    return InProcessToolClient(InMemoryBankingRepository())
+
+
+class _FailingToolClient:
+    """Destek kaydı açılamadığında SLA sözü verilmediğini doğrulamak için."""
+
+    async def call_tool(self, name: str, arguments: dict[str, object]) -> ToolCallRecord:
+        return ToolCallRecord(
+            tool_name=name,
+            arguments=arguments,
+            result=None,
+            ok=False,
+            error="UPSTREAM_TIMEOUT",
+            latency_ms=1.0,
+        )
+
+
+async def test_escalate_intent_combines_handoff_greeting_and_verification_request() -> None:
     # Regresyon: eskiden aktarım + temsilci karşılaması ayrı turlara
     # bölünmüştü, kullanıcı şikayetini iki kez yazmak zorunda kalıyordu
     # (canlıda görüldü). Artık tek turda hepsi birleşik.
     state = new_state("c1", "bir insanla konuşmak istiyorum")
     state["intent"] = IntentLabel.ESCALATE
 
-    result = escalate_node(state)
+    result = await escalate_node(state, _tool_client())
 
     answer = result["draft_answer"].lower()
     assert "aktarıyorum" in answer
@@ -22,11 +42,11 @@ def test_escalate_intent_combines_handoff_greeting_and_verification_request() ->
     assert result["intent"] == IntentLabel.ESCALATE
 
 
-def test_out_of_scope_gets_scope_message_listing_real_capabilities() -> None:
+async def test_out_of_scope_gets_scope_message_listing_real_capabilities() -> None:
     state = new_state("c1", "yarın hava nasıl olacak")
     state["intent"] = IntentLabel.OUT_OF_SCOPE
 
-    result = escalate_node(state)
+    result = await escalate_node(state, _tool_client())
 
     answer = result["draft_answer"].lower()
     assert "yardımcı olabilirim" in answer
@@ -35,72 +55,77 @@ def test_out_of_scope_gets_scope_message_listing_real_capabilities() -> None:
     assert result["escalation_stage"] is None
 
 
-def test_verifying_stage_with_four_digit_code_asks_for_the_issue() -> None:
+async def test_verifying_stage_with_four_digit_code_asks_for_the_issue() -> None:
     state = new_state("c1", "4321")
     state["intent"] = IntentLabel.OUT_OF_SCOPE  # o turun ham sınıflandırması önemsiz
     state["carried_escalation_stage"] = "verifying"
 
-    result = escalate_node(state)
+    result = await escalate_node(state, _tool_client())
 
     assert "doğruladım" in result["draft_answer"].lower()
     assert result["escalation_stage"] == "awaiting_issue"
     assert result["intent"] == IntentLabel.ESCALATE
 
 
-def test_verifying_stage_without_four_digit_code_retries() -> None:
+async def test_verifying_stage_without_four_digit_code_retries() -> None:
     state = new_state("c1", "hatırlamıyorum")
     state["carried_escalation_stage"] = "verifying"
 
-    result = escalate_node(state)
+    result = await escalate_node(state, _tool_client())
 
     assert result["escalation_stage"] == "verifying"
 
 
-def test_verifying_stage_extracts_code_embedded_in_a_sentence() -> None:
+async def test_verifying_stage_extracts_code_embedded_in_a_sentence() -> None:
     state = new_state("c1", "müşteri numaram 4321 sanırım")
     state["carried_escalation_stage"] = "verifying"
 
-    result = escalate_node(state)
+    result = await escalate_node(state, _tool_client())
 
     assert result["escalation_stage"] == "awaiting_issue"
 
 
-def test_awaiting_issue_stage_acknowledges_and_gives_a_concrete_sla() -> None:
+async def test_awaiting_issue_stage_acknowledges_and_gives_a_concrete_sla() -> None:
     # Şikayet SADECE burada, doğrulamadan sonra, tek seferde soruluyor.
     state = new_state("c1", "kartımdan izinsiz para çekilmiş")
     state["carried_escalation_stage"] = "awaiting_issue"
 
-    result = escalate_node(state)
+    result = await escalate_node(state, _tool_client())
 
     answer = result["draft_answer"].lower()
     assert "24 saat" in answer
     assert result["escalation_stage"] == "resolved"
+    # Söz veriliyorsa kayıt gerçekten açılmış olmalı.
+    opened = result["tool_calls"][0]
+    assert opened.tool_name == "open_support_ticket"
+    assert opened.ok is True
+    assert opened.result["data"]["ticket_id"] in result["draft_answer"]
 
 
-def test_resolved_stage_answers_timing_follow_up_instead_of_falling_out_of_script() -> None:
+async def test_resolved_stage_answers_timing_follow_up_instead_of_falling_out_of_script() -> None:
     # Regresyon: canlıda "ne zaman dönüş yapacaksınız" script'ten çıkıp genel
     # "kapsam dışı" cevabına düşüyordu — doğal bir takip sorusuna verilecek
     # en kötü cevap.
     state = new_state("c1", "ne zaman dönüş yapacaksınız")
     state["carried_escalation_stage"] = "resolved"
 
-    result = escalate_node(state)
+    result = await escalate_node(state, _tool_client())
 
     assert "24 saat" in result["draft_answer"]
     assert result["escalation_stage"] is None
 
 
-def test_resolved_stage_closes_gracefully_on_anything_else() -> None:
+async def test_resolved_stage_closes_gracefully_on_anything_else() -> None:
     state = new_state("c1", "teşekkürler")
     state["carried_escalation_stage"] = "resolved"
 
-    result = escalate_node(state)
+    result = await escalate_node(state, _tool_client())
 
     assert result["escalation_stage"] is None
     assert result["draft_answer"]
 
 
-def test_unmatched_pending_entity_reply_gets_a_targeted_retry_not_generic_out_of_scope() -> None:
+async def test_unmatched_pending_entity_reply_gets_a_targeted_retry_not_generic_out_of_scope() -> None:
     # Regresyon: tool_agent bir IBAN isteyip kullanıcı "4321" (bir IBAN değil)
     # yazdığında, ner_agent bunu bir IBAN olarak tanımadığı için sistem hiçbir
     # şey eşleşmemiş gibi genel "kapsam dışı" yetenek listesine düşüyordu — az
@@ -111,7 +136,7 @@ def test_unmatched_pending_entity_reply_gets_a_targeted_retry_not_generic_out_of
         intent=IntentLabel.ACCOUNT_ACTION, entity_type=EntityType.IBAN, original_message="bakiyem ne kadar?"
     )
 
-    result = escalate_node(state)
+    result = await escalate_node(state, _tool_client())
 
     answer = result["draft_answer"].lower()
     assert "iban" in answer
@@ -120,3 +145,29 @@ def test_unmatched_pending_entity_reply_gets_a_targeted_retry_not_generic_out_of
     # hafıza kaybı olur.
     assert result["pending_entity_request"].entity_type == EntityType.IBAN
     assert result["escalation_stage"] is None
+
+
+async def test_sla_is_not_promised_when_the_ticket_cannot_be_opened() -> None:
+    # Sabit metinle verilen bir söz de tutulamıyorsa yanlış sözdür: araç
+    # başarısızsa 24 saat vaadi verilmiyor ve aşama ilerlemiyor, böylece
+    # kullanıcı tekrar anlattığında yeniden deneniyor.
+    state = new_state("c1", "kartımdan izinsiz para çekilmiş")
+    state["carried_escalation_stage"] = "awaiting_issue"
+
+    result = await escalate_node(state, _FailingToolClient())
+
+    assert "24 saat" not in result["draft_answer"]
+    assert result["escalation_stage"] == "awaiting_issue"
+    assert result["tool_calls"][0].ok is False
+
+
+async def test_ticket_subject_is_trimmed_not_sent_whole() -> None:
+    uzun = "kartımdan izinsiz para çekilmiş " * 10
+    state = new_state("c1", uzun)
+    state["carried_escalation_stage"] = "awaiting_issue"
+
+    result = await escalate_node(state, _tool_client())
+
+    subject = result["tool_calls"][0].arguments["subject"]
+    assert len(subject) <= 80
+    assert result["tool_calls"][0].arguments["description"] == uzun

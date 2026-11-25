@@ -1,8 +1,11 @@
 """IntentLabel.ESCALATE ve IntentLabel.OUT_OF_SCOPE'u işler.
 
 LLM'siz, script'li bir akış: aktarım+temsilci karşılaması+doğrulama isteği
-tek turda (`verifying`) -> sorunu al (`awaiting_issue`) -> kaydet + SLA ver
-(`resolved`) -> kapanış. Aşama `agents/memory.py` üzerinden taşınıyor
+tek turda (`verifying`) -> sorunu al (`awaiting_issue`) -> destek kaydını aç +
+SLA ver (`resolved`) -> kapanış. Kayıt gerçekten açılıyor: `open_support_ticket`
+aracı çağrılıyor ve talep numarası kullanıcıya veriliyor. Araç başarısız olursa
+SLA sözü verilmiyor — tutulamayacak bir söz, script'li olması onu doğru
+yapmıyor. Aşama `agents/memory.py` üzerinden taşınıyor
 (`carried_escalation_stage` girdi, `escalation_stage` çıktı). Gerekçe ve
 tasarım geçmişi: ADR-013.
 """
@@ -10,10 +13,12 @@ tasarım geçmişi: ADR-013.
 from __future__ import annotations
 
 import re
+from collections.abc import Awaitable, Callable
 
 from agents.memory import is_bare_confirmation, is_cancellation
 from agents.state import GraphState
-from schemas.dto import AgentTraceStep, EntityType, IntentLabel
+from agents.tools.mcp_client import InProcessToolClient, MCPToolClient
+from schemas.dto import AgentTraceStep, EntityType, IntentLabel, ToolCallRecord
 
 _AGENT_NAME = "Aylin"
 
@@ -31,8 +36,19 @@ _ASK_FOR_ISSUE = (
     "kısaca anlatır mısınız?"
 )
 _ISSUE_ACKNOWLEDGED = (
-    "Anladım, bu konuyu kaydettim. En geç 24 saat içinde bir uzmanımız sizinle iletişime "
+    "Anladım, kaydınızı oluşturdum. Talep numaranız {ticket_id}. En geç 24 saat içinde bir "
+    "uzmanımız sizinle iletişime geçecek. Başka bir konuda yardımcı olabilir miyim?"
+)
+# Kayıt açıldı ama araç numarayı döndürmediyse: söz tutuldu, numara verilmiyor.
+_ISSUE_ACKNOWLEDGED_NO_ID = (
+    "Anladım, kaydınızı oluşturdum. En geç 24 saat içinde bir uzmanımız sizinle iletişime "
     "geçecek. Başka bir konuda yardımcı olabilir miyim?"
+)
+# Kayıt açılamadıysa SLA verilmiyor. Aşama `awaiting_issue` kalıyor ki kullanıcı
+# tekrar anlattığında yeniden denensin.
+_ISSUE_NOT_LOGGED = (
+    "Anladım ama kaydınızı şu anda oluşturamadım. Sorununuzu bir daha yazarsanız yeniden "
+    "deneyeyim, ya da dilerseniz sizi müşteri hizmetlerine yönlendireyim."
 )
 _TIMING_REMINDER = "En geç 24 saat içinde bir uzmanımız sizinle iletişime geçecek."
 _CLOSING = "Rica ederim, başka bir konuda da yardımcı olabilirim."
@@ -80,7 +96,20 @@ _VERIFICATION_CODE_RE = re.compile(r"(?<!\d)\d{4}(?!\d)")
 _TIMING_FOLLOW_UP_RE = re.compile(r"ne zaman|kaç (gün|saat)|ne kadar sürer|süre", re.IGNORECASE)
 
 
-def escalate_node(state: GraphState) -> dict[str, object]:
+def build_escalate_node(
+    tool_client: MCPToolClient | InProcessToolClient,
+) -> Callable[[GraphState], Awaitable[dict[str, object]]]:
+    """Diğer worker'larla aynı factory deseni: bağımlılık grafik kurulurken verilir."""
+
+    async def node(state: GraphState) -> dict[str, object]:
+        return await escalate_node(state, tool_client)
+
+    return node
+
+
+async def escalate_node(
+    state: GraphState, tool_client: MCPToolClient | InProcessToolClient
+) -> dict[str, object]:
     intent = state.get("intent")
     stage = state.get("carried_escalation_stage")
 
@@ -99,7 +128,7 @@ def escalate_node(state: GraphState) -> dict[str, object]:
         return _step(_VERIFICATION_RETRY, "verifying", "verification retry (no 4-digit code found)")
 
     if stage == "awaiting_issue":
-        return _step(_ISSUE_ACKNOWLEDGED, "resolved", "issue logged, gave SLA")
+        return await _open_support_ticket(tool_client, state)
 
     if stage == "resolved":
         if _TIMING_FOLLOW_UP_RE.search(state["user_query"]):
@@ -144,6 +173,49 @@ def escalate_node(state: GraphState) -> dict[str, object]:
         "escalation_stage": None,
         "trace": [AgentTraceStep(node="escalate", summary=f"out of scope for intent={intent}")],
     }
+
+
+async def _open_support_ticket(
+    tool_client: MCPToolClient | InProcessToolClient, state: GraphState
+) -> dict[str, object]:
+    issue = state["user_query"]
+    record = await tool_client.call_tool(
+        "open_support_ticket",
+        {"subject": _subject_from(issue), "description": issue},
+    )
+
+    if not record.ok:
+        step = _step(_ISSUE_NOT_LOGGED, "awaiting_issue", "support ticket failed, no SLA promised")
+        step["tool_calls"] = [record]
+        return step
+
+    ticket_id = _ticket_id(record)
+    message = (
+        _ISSUE_ACKNOWLEDGED.format(ticket_id=ticket_id)
+        if ticket_id
+        else _ISSUE_ACKNOWLEDGED_NO_ID
+    )
+    step = _step(message, "resolved", "support ticket opened, gave SLA")
+    step["tool_calls"] = [record]
+    return step
+
+
+def _ticket_id(record: ToolCallRecord) -> str | None:
+    result = record.result
+    if not isinstance(result, dict):
+        return None
+    data = result.get("data")
+    if not isinstance(data, dict):
+        return None
+    value = data.get("ticket_id")
+    return value if isinstance(value, str) else None
+
+
+def _subject_from(issue: str) -> str:
+    # Konu başlığı, sorunun kendisinin kısaltılmışı. Ayrı bir LLM çağrısıyla
+    # başlık ürettirmek bu akışın LLM'siz olma kararını bozardı (ADR-013).
+    flat = " ".join(issue.split())
+    return flat if len(flat) <= 80 else f"{flat[:77]}..."
 
 
 def _last_assistant_message(state: GraphState) -> str:
