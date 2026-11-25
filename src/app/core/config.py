@@ -21,6 +21,7 @@ class LLMProvider(StrEnum):
 
 class EmbeddingProvider(StrEnum):
     OPENAI = "openai"
+    GOOGLE = "google"
     FAKE = "fake"
 
 
@@ -44,6 +45,7 @@ class Settings(BaseSettings):
 
     embedding_provider: EmbeddingProvider = EmbeddingProvider.FAKE
     openai_embedding_model: str = "text-embedding-3-small"
+    google_embedding_model: str = "models/text-embedding-004"
 
     chroma_persist_dir: str = "./data/vectorstore"
     chroma_collection: str = "banking_kb"

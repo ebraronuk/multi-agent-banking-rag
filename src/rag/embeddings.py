@@ -2,8 +2,16 @@
 
 `FakeHashEmbeddings`, tüm sistemin sıfır API anahtarı ve sıfır ağ erişimiyle
 uçtan uca çalışabilmesi için var — kalitesi gerçek bir modelden düşük (sadece
-paylaşılan token'lar, anlam bilgisi yok). `EMBEDDING_PROVIDER=openai` hiçbir
-çağıran kodu değiştirmeden gerçek embedding'lere geçiyor.
+paylaşılan token'lar, anlam bilgisi yok). `EMBEDDING_PROVIDER=openai` ya da
+`google` hiçbir çağıran kodu değiştirmeden gerçek embedding'lere geçiyor.
+
+Sağlayıcı değiştirmek vektör boyutunu da değiştiriyor (fake 384, Google 768,
+OpenAI 1536), yani mevcut koleksiyon okunamaz hale geliyor. Değiştirdikten
+sonra `scripts/seed_vectorstore.py` yeniden çalıştırılmalı.
+
+Ayrıca: `data/eval/` altındaki retrieval ayarları (`rag_candidate_pool`,
+`vector_weight`) fake embedding'e karşı ölçüldü. Gerçek embedding'e geçince
+o sayılar yeniden ölçülmeli — `make eval-gate` bunu söyleyecek.
 """
 
 from __future__ import annotations
@@ -62,6 +70,17 @@ def get_embeddings(settings: Settings) -> Embeddings:
         return OpenAIEmbeddings(
             model=settings.openai_embedding_model,
             api_key=SecretStr(settings.openai_api_key),
+        )
+
+    if settings.embedding_provider == EmbeddingProvider.GOOGLE and settings.google_api_key:
+        from langchain_google_genai import GoogleGenerativeAIEmbeddings
+        from pydantic import SecretStr
+
+        # Alan adi `google_api_key` ama init alias'i `api_key`; alias kullaniliyor
+        # ki mypy uretilen imzayla ortusebilsin.
+        return GoogleGenerativeAIEmbeddings(
+            model=settings.google_embedding_model,
+            api_key=SecretStr(settings.google_api_key),
         )
 
     return FakeHashEmbeddings()
