@@ -56,17 +56,37 @@ _FOLLOW_UP_MARKERS: tuple[str, ...] = (
 )
 
 
-def _last_user_message(state: GraphState) -> str | None:
+def _looks_like_follow_up(text: str) -> bool:
+    folded = ascii_fold(text.strip())
+    return len(folded) <= 40 and any(
+        ascii_fold(marker) in folded for marker in _FOLLOW_UP_MARKERS
+    )
+
+
+def _last_anchor_message(state: GraphState) -> str | None:
+    """Birleştirmenin bağlanacağı son *konu açan* kullanıcı mesajı.
+
+    Takip parçalarının atlanma sebebi ölçüldü: "eft limiti" -> "ya ücreti ne
+    kadar" -> "peki hafta sonu da aynı mı" zincirinde her mesaj bir öncekine
+    bağlanınca ikinci adımda "eft" çapası kayboluyor ve sorgu iki parçanın
+    toplamına dönüşüyordu. Cevap da konudan çıkıp çağrı merkezi saatlerine
+    kayıyordu. Çapa, kendisi takip parçası olmayan en son mesaj.
+    """
+    fallback: str | None = None
     for message in reversed(state.get("history", [])):
-        if message.role == "user":
+        if message.role != "user":
+            continue
+        if fallback is None:
+            fallback = message.content
+        if not _looks_like_follow_up(message.content):
             return message.content
-    return None
+    # Hepsi parçaysa en sonuncusuna bağlan: hiç bağlamamaktan iyi.
+    return fallback
 
 
-def _continue_previous_topic(state: GraphState) -> dict[str, object] | None:
-    """Kısa bir takip sorusunu önceki konunun devamı olarak ele alır.
+def _merged_follow_up_query(state: GraphState) -> str | None:
+    """Kısa bir takip sorusunu önceki konuyla birleştirip retrieval sorgusu üretir.
 
-    Önceki soruyla birleştirilmiş bir metin `active_sub_query`ye yazılıyor:
     "peki ya havale" tek başına hiçbir şey getirmez, "eft limiti peki ya
     havale" doğru dokümana gider. Ham mesaj değiştirilmiyor — kullanıcının
     yazdığı şey trace'te olduğu gibi duruyor.
@@ -77,21 +97,10 @@ def _continue_previous_topic(state: GraphState) -> dict[str, object] | None:
     folded = ascii_fold(text)
     if not any(ascii_fold(marker) in folded for marker in _FOLLOW_UP_MARKERS):
         return None
-    previous = _last_user_message(state)
+    previous = _last_anchor_message(state)
     if not previous:
         return None
-    return {
-        "intent": IntentLabel.RAG_QUERY,
-        "intent_confidence": 0.4,
-        "extra_intents": [],
-        "active_sub_query": f"{previous} {text}",
-        "trace": [
-            AgentTraceStep(
-                node="intent_agent",
-                summary="treated as follow-up to the previous question",
-            )
-        ],
-    }
+    return f"{previous} {text}"
 
 
 def build_intent_node(llm: BaseChatModel) -> Callable[[GraphState], Awaitable[dict[str, object]]]:
@@ -156,17 +165,38 @@ def build_intent_node(llm: BaseChatModel) -> Callable[[GraphState], Awaitable[di
             state["user_query"], entities, llm
         )
 
-        # Takip sorusu: "eft limiti" -> "peki ya havale". Tek başına hiçbir
-        # anahtar kelimeye anchor'lanamayan bu mesaj OUT_OF_SCOPE'a düşüyor ve
-        # kullanıcı az önce cevaplanan konunun devamında "yardımcı olamıyorum"
-        # duyuyordu. Yalnızca OUT_OF_SCOPE'ta devreye giriyor — başka bir
-        # niyet zaten bulunmuşsa ona dokunmuyor, yani mevcut davranışı
-        # bozmadan sadece "bilmiyorum" cevabını iyileştiriyor.
-        if intent is IntentLabel.OUT_OF_SCOPE:
-            continued = _continue_previous_topic(state)
-            if continued is not None:
-                return continued
         extra_intents = _clean_extra_intents(intent, extra_intents_raw)
+
+        # Takip sorusu: "eft limiti" -> "peki ya havale". Bu mesaj tek başına
+        # doğru dokümana gitmiyor.
+        #
+        # Önce yalnızca OUT_OF_SCOPE'ta devreye giriyordu, gerekçe "doğru
+        # bulunmuş bir niyete dokunma" idi. Ama asıl sorun sınıflandırmada
+        # değil retrieval'daydı: "ya ücreti ne kadar?" içinde "ücret" geçtiği
+        # için RAG_QUERY'ye doğru şekilde düşüyor, sonra parça tek başına
+        # aranınca alakasız dokümanı getiriyordu. Yani doğru niyet, yanlış
+        # cevap.
+        #
+        # RAG_QUERY'de birleştirme yalnızca `active_sub_query`yi, yani arama
+        # sorgusunu değiştiriyor; niyet, güven ve çoklu niyet olduğu gibi
+        # kalıyor. Araç niyetlerinde (ACCOUNT_ACTION, CARD_ACTION) bilinçli
+        # olarak çalışmıyor: orada birleştirme yönlendirmeyi bozardı.
+        if intent in {IntentLabel.OUT_OF_SCOPE, IntentLabel.RAG_QUERY}:
+            merged = _merged_follow_up_query(state)
+            if merged is not None:
+                return {
+                    "intent": IntentLabel.RAG_QUERY,
+                    "intent_confidence": confidence if intent is IntentLabel.RAG_QUERY else 0.4,
+                    "extra_intents": extra_intents,
+                    "active_sub_query": merged,
+                    "trace": [
+                        AgentTraceStep(
+                            node="intent_agent",
+                            summary="treated as follow-up to the previous question",
+                        )
+                    ],
+                }
+
         summary = f"classified as {intent} (confidence={confidence:.2f})"
         if extra_intents:
             summary += f", extra: {[str(i) for i in extra_intents]}"

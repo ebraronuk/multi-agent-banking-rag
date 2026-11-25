@@ -4,7 +4,13 @@ from agents.state import new_state
 from agents.workers.intent_agent import _clean_extra_intents, build_intent_node
 from app.core.llm import FakeChatModel
 from nlp.intent_classifier import _IntentClassification
-from schemas.dto import Entity, EntityType, IntentLabel, PendingEntityRequest
+from schemas.dto import (
+    ChatMessage,
+    Entity,
+    EntityType,
+    IntentLabel,
+    PendingEntityRequest,
+)
 
 
 async def test_intent_node_continues_pending_request_when_entity_answered() -> None:
@@ -132,3 +138,38 @@ def test_clean_extra_intents_caps_at_two() -> None:
         [IntentLabel.RAG_QUERY, IntentLabel.ACCOUNT_ACTION, IntentLabel.TRANSACTION_ACTION],
     )
     assert len(cleaned) == 2
+
+
+async def test_follow_up_chain_stays_anchored_to_the_original_question() -> None:
+    # "eft limiti" -> "ya ucreti ne kadar" -> "peki hafta sonu da ayni mi"
+    # zincirinde her mesaj bir oncekine baglanirsa ikinci adimda "eft" capasi
+    # kayboluyor ve sorgu iki parcanin toplamina donusuyor.
+    node = build_intent_node(FakeChatModel())
+    state = new_state("c1", "peki hafta sonu da aynı mı?")
+    state["history"] = [
+        ChatMessage(role="user", content="EFT limiti ne kadar?"),
+        ChatMessage(role="assistant", content="Günlük limit 50.000 TL."),
+        ChatMessage(role="user", content="ya ücreti ne kadar?"),
+        ChatMessage(role="assistant", content="Havale ücretsiz."),
+    ]
+
+    result = await node(state)
+
+    assert result["active_sub_query"].startswith("EFT limiti ne kadar?")
+    assert "hafta sonu" in result["active_sub_query"]
+
+
+async def test_tool_intents_are_not_merged_with_the_previous_question() -> None:
+    # Birlestirme yalnizca retrieval sorgusunu degistirmeli; arac niyetinde
+    # yonlendirmeyi bozardi.
+    node = build_intent_node(FakeChatModel())
+    state = new_state("c1", "bir de kartımı blokla")
+    state["history"] = [
+        ChatMessage(role="user", content="EFT limiti ne kadar?"),
+        ChatMessage(role="assistant", content="Günlük limit 50.000 TL."),
+    ]
+
+    result = await node(state)
+
+    assert result["intent"] is IntentLabel.CARD_ACTION
+    assert result.get("active_sub_query") is None
