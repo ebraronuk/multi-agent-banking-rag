@@ -96,9 +96,6 @@ süreç ayağa kaldırmadan hızlı, deterministik testler için. `DATABASE_URL`
   histogramını Prometheus formatında sunar. Bu demo'da kimliksiz (auth'suz) —
   gerçek bir dağıtımda cluster'ın iç ağına kapatılıp Prometheus'un oradan
   scrape etmesi beklenir, `/chat` ile aynı public dinleyicide durmaz.
-- LangSmith tracing opsiyonel bir açma/kapama anahtarı olarak tanımlı
-  (`LANGSMITH_TRACING`) ama bu demo'da varsayılan kapalı — gerçek bir dağıtımda açılması
-  önerilir (bkz. README "Sınırlar / sonraki adımlar").
 
 ## Dayanıklılık ve kötüye kullanım koruması
 

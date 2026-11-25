@@ -112,8 +112,6 @@ class Settings(BaseSettings):
         default="20/minute", description="slowapi limit string, e.g. '20/minute'"
     )
 
-    langsmith_tracing: bool = False
-    langsmith_api_key: str | None = None
 
     redis_url: str | None = Field(
         default=None,

@@ -279,8 +279,6 @@ merkezinde, bu yüzden izlenebilirlik sona eklenen bir özellik değil.
 - LLM-planlı araç döngüsü (ADR-009) tek turn içinde birden çok aracı sıralayabiliyor,
   ama turlar arası çok adımlı bir plan (örn. "önce bakiyeme bak, düşükse uyar") yok —
   grafiğin döngü mekanizması buna hazır, bu demo'da tek turluk planlama yeterli görüldü.
-- LangSmith/Langfuse tracing entegrasyonu bir config anahtarı olarak var (`LANGSMITH_TRACING`)
-  ama bu demo'da varsayılan kapalı.
 - Kimlik doğrulama/oturum yok — `/chat` şu an herkese açık; gerçek dağıtım bir
   auth middleware'i gerektirir.
 - Değerlendirme seti elle etiketlenmiş, RAGAS gibi bir çerçeve değil — bkz.
