@@ -10,6 +10,10 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
+from enum import Enum
+from typing import TypeVar, cast
+
+from pydantic import BaseModel
 
 from agents.prompts.guardrail_prompt import (
     FINANCIAL_ADVICE_DISCLAIMER,
@@ -92,6 +96,47 @@ def _redact_sensitive_numbers(text: str) -> tuple[str, bool]:
     text = _IBAN_RE.sub(_mask, text)
     text = _LONG_DIGIT_RUN_RE.sub(_mask, text)
     return text, redacted
+
+
+T = TypeVar("T")
+
+
+def redact_diagnostics(value: T) -> T:
+    """Yanitin tanilama alanlarindaki ham PII'yi maskeler.
+
+    Guardrail yalnizca kullaniciya gosterilen cevabi maskeliyordu, ama ayni HTTP
+    yaniti `tool_calls` ve `entities` alanlarini da tasiyor ve tool_agent hesap
+    numarasini oraya arguman olarak koyuyor. Cevapta maskelenmis bir IBAN'in
+    yanindaki alanda ham halinin durmasi maskeyi anlamsiz kiliyordu.
+
+    Tanilama icin gereken sey hangi aracin cagrildigi ve ne kadar surdugu;
+    degerin kendisi degil. O yuzden maskeleme yanitin tamamina uygulaniyor,
+    alanlar kaldirilmiyor.
+    """
+    # StrEnum ayni zamanda str: once onu eleme, yoksa EntityType.IBAN duz bir
+    # string'e donusuyor ve sema disariya enum yerine metin veriyor.
+    return cast(T, _redact_any(value))
+
+
+def _redact_any(value: object) -> object:
+    # StrEnum ayni zamanda str: once onu eleme, yoksa EntityType.IBAN duz bir
+    # string'e donusuyor ve sema disariya enum yerine metin veriyor.
+    if isinstance(value, Enum):
+        return value
+    if isinstance(value, str):
+        return _redact_sensitive_numbers(value)[0]
+    if isinstance(value, dict):
+        return {key: _redact_any(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_redact_any(item) for item in value]
+    if isinstance(value, BaseModel):
+        return value.model_copy(
+            update={
+                name: _redact_any(getattr(value, name))
+                for name in type(value).model_fields
+            }
+        )
+    return value
 
 
 def _contains_advice_language(text: str) -> bool:

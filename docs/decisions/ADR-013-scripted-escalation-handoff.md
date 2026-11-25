@@ -48,7 +48,13 @@ olduğu açıkça yazıyor.
 - ✅ Takip mesajı sınıflandırıcının o turdaki tahminine bakılmaksızın script'te kalıyor.
 - ✅ Şikayet bir kez soruluyor, kapanış sorusu somut süre alıyor.
 - ✅ API'nin `intent`'i script boyunca tutarlı; arayüz etiketi cevapla çelişmiyor.
-- ✅ Script LLM'siz olduğu için tutulamayacak vaat riski yok.
+- ❌ (düzeltildi) "Script LLM'siz olduğu için tutulamayacak vaat riski yok" diyordu; bu
+  yanlıştı. Risk vaadin nereden geldiğinde değil, tutulup tutulmadığındaydı: asistan
+  "kaydettim, 24 saat içinde döneceğiz" diyordu ama hiçbir kayıt açılmıyordu.
+  `graph.py` eskalasyon yolunu doğrudan guardrail'e bağladığı için `tool_agent`
+  üzerinden `open_support_ticket` hiç çağrılmıyordu. Sabit metinle verilen bir söz de
+  tutulamıyorsa yanlış sözdür. Artık `escalate_node` aracı kendisi çağırıyor, talep
+  numarasını mesaja koyuyor, ve araç başarısız olursa SLA vermeyip aşamada kalıyor.
 - ✅ (sonradan) `awaiting_issue` her mesajı kör kör şikayet sayıyordu; "EFT limitim ne
   kadar?" sorusuna bile "kaydettim, 24 saat içinde döneceğiz" diyordu. Router artık bu tek
   durumda (`awaiting_issue` + RAG_QUERY) script'i atlayıp cevaplıyor. `verifying`'de bu
@@ -68,3 +74,7 @@ olduğu açıkça yazıyor.
   yazması, script'in ortasında para transferi sanılmasından ucuz.
 - ❌ Doğrulama gerçek değil, herhangi bir 4 hane kabul ediliyor. Bu bir UX akışı demosu.
 - ❌ `resolved` tek turluk; aynı soru üst üste iki kez sorulursa ikincisi script dışında.
+- ❌ `open_support_ticket` gerçek bir ticketing sistemine bağlı değil; `banking_repository`
+  rastgele bir numara üretip başarı dönüyor (bkz. ADR-010). Yani kayıt artık gerçekten
+  açılıyor ama açıldığı yer hâlâ demo veri katmanı. Vaat ile davranış tutarlı, veri
+  katmanı değil.

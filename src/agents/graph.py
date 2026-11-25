@@ -25,7 +25,7 @@ from agents.supervisor import (
     supervisor_node,
 )
 from agents.tools.mcp_client import get_tool_client
-from agents.workers.escalate_agent import escalate_node
+from agents.workers.escalate_agent import build_escalate_node
 from agents.workers.guardrail_agent import build_guardrail_node
 from agents.workers.intent_agent import build_intent_node
 from agents.workers.memory_agent import build_memory_load_node, build_memory_save_node
@@ -64,7 +64,7 @@ def build_graph(settings: Settings) -> CompiledStateGraph:
     tool_agent_node = build_tool_agent_node(tool_client, llm, settings)
     graph.add_node(NODE_TOOL_AGENT, tool_agent_node)  # type: ignore[arg-type]
     graph.add_node(NODE_SMALLTALK, build_smalltalk_node(llm))  # type: ignore[arg-type]
-    graph.add_node(NODE_ESCALATE, escalate_node)
+    graph.add_node(NODE_ESCALATE, build_escalate_node(tool_client))  # type: ignore[arg-type]
     graph.add_node(NODE_ADVANCE_INTENT, build_advance_intent_node(llm))  # type: ignore[arg-type]
     graph.add_node(NODE_SYNTHESIZER, build_synthesizer_node(llm))  # type: ignore[arg-type]
     graph.add_node(NODE_GUARDRAIL, build_guardrail_node(settings))  # type: ignore[arg-type]

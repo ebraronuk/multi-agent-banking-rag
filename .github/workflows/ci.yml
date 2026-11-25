@@ -31,6 +31,14 @@ jobs:
           EMBEDDING_PROVIDER: fake
         run: pytest --cov=src --cov-report=xml
 
+      # ADR-014 "olcmeden merge edilemez" diyordu ama kapi yalnizca Makefile'daydi,
+      # yani kimse kosmazsa gecerdi. Artik PR'i kiriyor.
+      - name: Degerlendirme kapisi (retrieval + kullanici dili regresyonu)
+        env:
+          LLM_PROVIDER: fake
+          EMBEDDING_PROVIDER: fake
+        run: make eval-gate
+
       - name: Upload coverage
         uses: actions/upload-artifact@v7
         with:

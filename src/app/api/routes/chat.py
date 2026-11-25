@@ -9,6 +9,7 @@ import uuid
 from fastapi import APIRouter, Request
 
 from agents.state import new_state
+from agents.workers.guardrail_agent import redact_diagnostics
 from app.core.config import get_settings
 from app.core.logging import bind_request_context, get_logger
 from app.core.rate_limit import limiter
@@ -64,10 +65,10 @@ async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
         conversation_id=conversation_id,
         answer=final_state.get("final_answer") or "",
         intent=final_state.get("intent") or IntentLabel.OUT_OF_SCOPE,
-        entities=final_state.get("entities", []),
+        entities=redact_diagnostics(final_state.get("entities", [])),
         citations=final_state.get("retrieved_docs", []),
-        tool_calls=final_state.get("tool_calls", []),
-        trace=final_state.get("trace", []),
+        tool_calls=redact_diagnostics(final_state.get("tool_calls", [])),
+        trace=redact_diagnostics(final_state.get("trace", [])),
         guardrail_flags=final_state.get("guardrail_flags", []),
         iterations=final_state.get("iteration_count", 0),
     )

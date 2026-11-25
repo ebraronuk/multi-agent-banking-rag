@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from agents.state import new_state
-from agents.workers.guardrail_agent import build_guardrail_node
+from agents.workers.guardrail_agent import build_guardrail_node, redact_diagnostics
 from app.core.config import Settings
-from schemas.dto import IntentLabel
+from schemas.dto import Entity, EntityType, IntentLabel, ToolCallRecord
 
 
 def _settings(max_iterations: int = 6) -> Settings:
@@ -128,3 +128,56 @@ def test_redacts_model_identity_leak_in_draft_answer() -> None:
 
     assert "MODEL_IDENTITY_REDACTED" in result["guardrail_flags"]
     assert "gemini" not in result["final_answer"].lower()
+
+
+def test_redacts_raw_iban_in_tool_call_arguments_and_result() -> None:
+    # Cevapta maskelenmis IBAN'in yanindaki tanilama alaninda ham halinin
+    # durmasi maskeyi anlamsiz kiliyordu: tool_agent hesap numarasini arguman
+    # olarak koyuyor ve ayni HTTP yaniti onu disariya veriyordu.
+    iban = "TR330006100519786457841326"
+    record = ToolCallRecord(
+        tool_name="get_balance",
+        arguments={"account_id": iban},
+        result={"ok": True, "data": {"iban": iban, "balance": 1500}},
+        ok=True,
+        latency_ms=12.0,
+    )
+
+    redacted = redact_diagnostics([record])[0]
+
+    assert iban not in str(redacted.arguments)
+    assert iban not in str(redacted.result)
+    assert redacted.arguments["account_id"] == "***1326"
+    # Taniyi tasiyan alanlar bozulmadan kaliyor; maskelenen yalnizca deger.
+    assert redacted.tool_name == "get_balance"
+    assert redacted.ok is True
+    assert redacted.latency_ms == 12.0
+    assert redacted.result["data"]["balance"] == 1500
+
+
+def test_redacts_raw_iban_in_entities() -> None:
+    iban = "TR330006100519786457841326"
+    entity = Entity(type=EntityType.IBAN, value=iban, normalized=iban)
+
+    redacted = redact_diagnostics([entity])[0]
+
+    assert redacted.value == "***1326"
+    assert redacted.normalized == "***1326"
+    assert redacted.type is EntityType.IBAN
+
+
+def test_redaction_leaves_short_numbers_alone() -> None:
+    # Kartin son 4 hanesi zaten maskelenmis bir deger; onu da maskelemek
+    # tanilamayi okunmaz yapardi.
+    record = ToolCallRecord(
+        tool_name="block_card",
+        arguments={"card_last4": "4321", "reason": "kayip"},
+        result={"ok": True},
+        ok=True,
+        latency_ms=5.0,
+    )
+
+    redacted = redact_diagnostics([record])[0]
+
+    assert redacted.arguments["card_last4"] == "4321"
+    assert redacted.arguments["reason"] == "kayip"
